@@ -3,3 +3,4 @@
 sample_data
 llama-server
 nohup.out
+__pycache__

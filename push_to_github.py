@@ -25,6 +25,7 @@ IGNORED_ITEMS = [
     "sample_data",
     "llama-server",
     "nohup.out",
+    "__pycache__",
 ]
 
 # ------------------------------------------------------------------

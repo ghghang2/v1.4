@@ -1,9 +1,11 @@
 import streamlit as st
+import streamlit.components.v1 as components
+from pathlib import Path
+from git import Repo, InvalidGitRepositoryError
 from app.config import DEFAULT_SYSTEM_PROMPT
 from app.client import get_client
 from app.utils import stream_response
 from app.docs_extractor import extract
-import streamlit.components.v1 as components
 import push_to_github
 
 # --------------------------------------------------------------------------- #
@@ -11,8 +13,58 @@ import push_to_github
 # --------------------------------------------------------------------------- #
 def refresh_docs() -> str:
     """Run the extractor once (same folder as app.py)."""
-    out_path = extract()                 # defaults to current dir + repo_docs.md
+    out_path = extract()
     return out_path.read_text(encoding="utf‑8")
+
+# --------------------------------------------------------------------------- #
+# Git helper – determine whether local repo is identical to remote
+# --------------------------------------------------------------------------- #
+def is_repo_up_to_date(repo_path: Path) -> bool:
+    """
+    Return True iff the local HEAD is the same as the remote `origin/main`
+    *and* there are no uncommitted changes.
+
+    If any of these conditions fail the function returns False.
+    """
+    try:
+        repo = Repo(repo_path)
+    except InvalidGitRepositoryError:
+        # No .git → definitely not up‑to‑date
+        return False
+
+    # If no remote defined → not up‑to‑date
+    if not repo.remotes:
+        return False
+
+    origin = repo.remotes.origin
+    # Fetch the latest refs from the remote
+    try:
+        origin.fetch()
+    except Exception:
+        # If fetch fails we conservatively say “not up‑to‑date”
+        return False
+
+    # Remote branch may be `main` or `master`; try `main` first
+    remote_branch = None
+    for branch_name in ("main", "master"):
+        try:
+            remote_branch = origin.refs[branch_name]
+            break
+        except IndexError:
+            continue
+
+    if remote_branch is None:
+        # Remote has no `main`/`master` branch → not up‑to‑date
+        return False
+
+    # Compare commit SHA
+    local_sha = repo.head.commit.hexsha
+    remote_sha = remote_branch.commit.hexsha
+
+    # No uncommitted changes
+    dirty = repo.is_dirty(untracked_files=True)
+
+    return (local_sha == remote_sha) and (not dirty)
 
 # --------------------------------------------------------------------------- #
 # Streamlit UI
@@ -20,15 +72,18 @@ def refresh_docs() -> str:
 def main():
     st.set_page_config(page_title="Chat with GPT‑OSS", layout="wide")
 
+    # Path of the repository (where this script lives)
+    REPO_PATH = Path(__file__).parent
+
     # ---- Session state ----------------------------------------------------
-    if "history" not in st.session_state:
-        st.session_state.history = []          # [(user, bot), ...]
-    if "system_prompt" not in st.session_state:
-        st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
-    if "repo_docs" not in st.session_state:
-        st.session_state.repo_docs = ""        # will hold the full codebase
-    if "has_pushed" not in st.session_state:   # <-- NEW flag
-        st.session_state.has_pushed = False
+    st.session_state.history = st.session_state.get("history", [])
+    st.session_state.system_prompt = st.session_state.get(
+        "system_prompt", DEFAULT_SYSTEM_PROMPT
+    )
+    st.session_state.repo_docs = st.session_state.get("repo_docs", "")
+
+    # Re‑compute every time the script runs
+    st.session_state.has_pushed = is_repo_up_to_date(REPO_PATH)
 
     # ---- Sidebar ----------------------------------------------------------
     with st.sidebar:
@@ -52,11 +107,12 @@ def main():
         if st.button("Refresh Docs"):
             st.session_state.repo_docs = refresh_docs()
             st.success("Codebase docs updated!")
-        
+
         if st.button("Push to GitHub"):
             with st.spinner("Pushing to GitHub…"):
                 try:
                     push_to_github.main()          # run the external script
+                    # After a successful push we consider the repo up‑to‑date
                     st.session_state.has_pushed = True
                     st.success("✅  Repository pushed to GitHub.")
                 except Exception as exc:
@@ -98,7 +154,10 @@ def main():
 
         # Save the finished reply
         st.session_state.history.append((user_input, bot_output))
-    
+
+    # -----------------------------------------------------------------------
+    # Browser‑leaving guard – depends on the *session* flag
+    # -----------------------------------------------------------------------
     has_pushed = st.session_state.get("has_pushed", False)
     components.html(
         f"""
