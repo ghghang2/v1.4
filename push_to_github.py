@@ -14,7 +14,7 @@ from git import Repo, GitCommandError, InvalidGitRepositoryError
 # USER SETTINGS
 # ------------------------------------------------------------------
 LOCAL_DIR   = Path(__file__).parent          # folder you want to push
-REPO_NAME   = "v1"                            # GitHub repo name
+REPO_NAME   = "v1.1"                            # GitHub repo name
 USER_NAME   = "ghghang2"                      # e.g. ghghang2
 
 IGNORED_ITEMS = [
