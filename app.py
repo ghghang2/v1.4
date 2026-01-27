@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
@@ -8,12 +9,11 @@ from app.utils import stream_response
 from app.docs_extractor import extract
 
 # --------------------------------------------------------------------------- #
-# Helpers
+#  Helpers
 # --------------------------------------------------------------------------- #
 def refresh_docs() -> str:
     """Run the extractor once (same folder as app.py)."""
     return extract().read_text(encoding="utf-8")
-
 
 def is_repo_up_to_date(repo_path: Path) -> bool:
     """Return True iff local HEAD == remote `origin/main` AND no dirty files."""
@@ -31,7 +31,6 @@ def is_repo_up_to_date(repo_path: Path) -> bool:
     except Exception:
         return False
 
-    # try common branch names
     for branch_name in ("main", "master"):
         try:
             remote_branch = origin.refs[branch_name]
@@ -46,9 +45,8 @@ def is_repo_up_to_date(repo_path: Path) -> bool:
         and not repo.is_dirty(untracked_files=True)
     )
 
-
 # --------------------------------------------------------------------------- #
-# Streamlit UI
+#  Streamlit UI
 # --------------------------------------------------------------------------- #
 def main():
     st.set_page_config(page_title="Chat with GPT‑OSS", layout="wide")
@@ -132,23 +130,17 @@ def main():
     components.html(
         f"""
         <script>
-        // Make the flag visible to the outer window
         window.top.hasPushed = {str(has_pushed).lower()};
-
-        // Attach the unload guard to the outer window
         window.top.onbeforeunload = function (e) {{
             if (!window.top.hasPushed) {{
-            // Modern browsers require e.preventDefault() + e.returnValue
-            e.preventDefault();
-            e.returnValue = '';
-            return 'You have not pushed to GitHub yet.\\nDo you really want to leave?';
+                e.preventDefault(); e.returnValue = '';
+                return 'You have not pushed to GitHub yet.\\nDo you really want to leave?';
             }}
         }};
         </script>
         """,
         height=0,
     )
-
 
 if __name__ == "__main__":
     main()

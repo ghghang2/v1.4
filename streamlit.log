@@ -12,3 +12,7 @@ Rebase failed: Cmd('git') failed due to: exit code(128)
   cmdline: git pull -v --rebase -- origin main
   stderr: 'error: cannot pull with rebase: You have unstaged changes.
 error: please commit or stash them.' – falling back to merge
+Rebase failed: Cmd('git') failed due to: exit code(128)
+  cmdline: git pull -v --rebase -- origin main
+  stderr: 'error: cannot pull with rebase: You have unstaged changes.
+error: please commit or stash them.' – falling back to merge

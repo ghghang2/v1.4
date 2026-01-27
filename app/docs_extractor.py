@@ -1,7 +1,5 @@
 # app/docs_extractor.py
 """
-extract_docs.py → docs_extractor.py
------------------------------------
 Walk a directory tree and write a single Markdown file that contains:
 
 * The relative path of each file (as a level‑2 heading)
@@ -11,7 +9,6 @@ Walk a directory tree and write a single Markdown file that contains:
 from __future__ import annotations
 
 import pathlib
-import sys
 import logging
 
 log = logging.getLogger(__name__)
@@ -33,13 +30,6 @@ def write_docs(root: pathlib.Path, out: pathlib.Path) -> None:
 def extract(repo_root: pathlib.Path | str = ".", out_file: pathlib.Path | str | None = None) -> pathlib.Path:
     """
     Extract the repo into a Markdown file and return the path.
-
-    Parameters
-    ----------
-    repo_root : pathlib.Path | str
-        Root of the repo to walk.  Defaults to the current dir.
-    out_file : pathlib.Path | str | None
-        Path to write the Markdown.  If ``None`` uses ``repo_docs.md``.
     """
     root = pathlib.Path(repo_root).resolve()
     out = pathlib.Path(out_file or "repo_docs.md").resolve()
@@ -49,7 +39,8 @@ def extract(repo_root: pathlib.Path | str = ".", out_file: pathlib.Path | str | 
     log.info("✅  Wrote docs to %s", out)
     return out
 
-def main() -> None:  # CLI entry point
+def main() -> None:
+    """CLI entry point."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Extract a repo into Markdown")
