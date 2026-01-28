@@ -976,22 +976,24 @@ def stop() -> None:
         return
 
     print("🛑  Stopping services…")
-    llama_proc.terminate()
-    LLAMA_LOG_file.close() 
-    streamlit_proc.terminate()
-    STREAMLIT_LOG_file.close() 
-    ngrok_proc.terminate()
-    NGROK_LOG_file.close() 
     for name, pid in [
         ("llama-server", info["llama_server_pid"]),
         ("Streamlit", info["streamlit_pid"]),
         ("ngrok", info["ngrok_pid"]),
     ]:
         try:
+            # First try a graceful terminate
             os.kill(pid, signal.SIGTERM)
-            print(f"✅  Stopped {name} (PID: {pid})")
-        except OSError:
-            print(f"⚠️  {name} (PID: {pid}) was not running")
+            print(f"✅  Sent SIGTERM to {name} (PID {pid})")
+        except OSError as exc:
+            # If the process is already dead, we’re fine
+            if exc.errno == errno.ESRCH:
+                print(f"⚠️  {name} (PID {pid}) was not running")
+            else:
+                print(f"❌  Error stopping {name} (PID {pid}): {exc}")
+
+    # Optionally wait a moment for processes to exit
+    time.sleep(1)
 
     # Clean up the service info files
     for path in (SERVICE_INFO, Path("tunnel_url.txt")):
@@ -999,6 +1001,7 @@ def stop() -> None:
             path.unlink()
         except FileNotFoundError:
             pass
+
     print("🧹  Cleaned up service info files")
 
 # --------------------------------------------------------------------------- #
