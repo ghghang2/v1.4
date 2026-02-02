@@ -138,11 +138,13 @@ def main() -> None:
 
         full_text = assistant_text
         if tool_calls:
-            tool_text, remaining_calls = process_tool_calls(client, msgs, tools, placeholder, tool_calls)
-            full_text += tool_text
-            while remaining_calls:
-                tool_text, remaining_calls = process_tool_calls(client, msgs, tools, placeholder, remaining_calls)
-                full_text += tool_text
+            full_text = process_tool_calls(client, msgs, tools, placeholder, tool_calls)
+        else: 
+            full_text = assistant_text
+            # full_text += tool_text
+            # while remaining_calls:
+            #     tool_text, remaining_calls = process_tool_calls(client, msgs, tools, placeholder, remaining_calls)
+            #     full_text += tool_text
                 
         history.append((user_input, full_text))
         log_message(session_id, "assistant", full_text)

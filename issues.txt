@@ -11,7 +11,3 @@ Summary of problems with the chat/messaging flow
 | 7 | Potential API errors (content=None) | Some OpenAI SDKs require a string for `content`. While the spec accepts `None`, the local OpenAI‑compatible server may reject it, causing a run‑time error. | The entire chat flow could crash if the model rejects the tool‑call message. |
 | 8 | Redundant tool‑call handling logic | `process_tool_calls` loops until `tool_calls` is `None`, but the logic inside the loop appends the same `full_text` to the cumulative string each time, and then the outer loop in `main` repeats the same call again. | This double‑processing can lead to duplicated assistant text in the final bubble and excessive API calls. |
 | 9 | No error‑handling for tool‑call failures | If a tool raises an exception, the result is a string containing the error, but the assistant message still includes that string as a normal reply. | The user sees raw error messages intermingled with normal text, which is confusing. |
-
-Take‑away
-
-The current implementation intermixes streaming, tool‑call handling and UI updates in a way that produces duplicate log entries, duplicate assistant bubbles, missing tool‑call previews, and a fragile placeholder strategy. A cleaner separation of concerns – streaming → tool‑call execution → final rendering – together with a single write‑to‑DB per assistant turn and a single UI component per assistant reply, would resolve all of the above.
