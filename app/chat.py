@@ -80,8 +80,7 @@ def stream_and_collect(
     reasoning_text = ""
     tool_calls_buffer: Dict[int, Dict[str, Any]] = {}
     finished = False
-    expander = st.expander("Reasoning", expanded=True)
-    reasoning_placeholder = expander.empty()
+    reasoning_placeholder = st.empty()
     placeholder = st.empty()
 
     for chunk in stream:
@@ -94,9 +93,8 @@ def stream_and_collect(
         reasoning_part = delta.reasoning_content if hasattr(delta, 'reasoning_content') else None
         if reasoning_part:
             reasoning_text += reasoning_part
-            reasoning_placeholder.markdown(
-                reasoning_text, unsafe_allow_html=True
-            )
+            md = f"<details open><summary>Reasoning</summary>\n{reasoning_text}\n</details>"
+            reasoning_placeholder.markdown(md, unsafe_allow_html=True)
 
         # Regular text
         if delta.content:

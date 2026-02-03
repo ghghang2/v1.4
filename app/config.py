@@ -10,7 +10,10 @@ NGROK_URL = "http://localhost:8000"
 
 MODEL_NAME = "unsloth/gpt-oss-20b-GGUF:F16"
 DEFAULT_SYSTEM_PROMPT = f'''
-You are to use tools to fulfill each request. Be concise and accurate at all times. Tool named apply_patch is not available.
+Where appropriate, you are to use tools to help you fulfill each request.
+Be concise and accurate at all times.
+You are not able to patch files and the command 'apply_patch' is NOT available.
+If you are making major changes to a file, always create a copy of the current version with a date and timestamp. You can revert back to it if necessary.
 '''
 
 # --------------------------------------------------------------------------- #
