@@ -101,8 +101,7 @@ def main() -> None:
             st.success("Codebase docs updated!")
 
         # --- status indicator
-        status = "✅ Pushed" if st.session_state.has_pushed else "⚠️ Not pushed"
-        if st.button(status):
+        if st.button("push to git"):
             with st.spinner("Pushing to GitHub…"):
                 try:
                     from app.push_to_github import main as push_main
@@ -112,8 +111,8 @@ def main() -> None:
                 except Exception as exc:
                     st.error(f"❌ Push failed: {exc}")
 
-        
-        # st.markdown(f"{status}")
+        status = "✅ Pushed" if st.session_state.has_pushed else "⚠️ Not pushed"
+        st.markdown(f"{status}")
 
         # --- session selector
         session_options = ["new"] + get_session_ids()
