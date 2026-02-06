@@ -93,6 +93,10 @@ def main() -> None:
 
     # Sidebar
     with st.sidebar:
+
+        # --- Server Status expander (new)
+        display_metrics_panel()
+        
         # --- session controls
         if st.button("new chat", key="new_chat_btn"):
             st.session_state.session_id = str(uuid.uuid4())
@@ -131,8 +135,7 @@ def main() -> None:
         for t in TOOLS:
             st.markdown(f"{t.name}")
 
-        # --- Server Status expander (new)
-        display_metrics_panel()
+        
 
     # Load conversation
     session_id = st.session_state.get("session_id", str(uuid.uuid4()))
