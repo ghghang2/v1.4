@@ -137,7 +137,6 @@ def main() -> None:
             st.markdown(f"{status}")
             st.markdown('\n\n>' + '\n\n>'.join(changed_files_list))
             
-            # --- status indicator
             if st.button("push to git"):
                 with st.spinner("Pushing to GitHub…"):
                     try:
@@ -146,6 +145,9 @@ def main() -> None:
                         st.session_state.has_pushed = True
                         st.success("✅ Repository pushed to GitHub.")
                         changed_files_list = changed_files()
+                        status = "✅ Pushed" if not len(changed_files_list) else "⚠️ Not pushed"
+                        st.markdown(f"{status}")
+                        st.markdown('\n\n>' + '\n\n>'.join(changed_files_list))
                     except Exception as exc:
                         st.error(f"❌ Push failed: {exc}")
 
