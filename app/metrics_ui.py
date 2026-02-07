@@ -4,8 +4,37 @@ import threading
 from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+import subprocess
 
 TOKENS_PER_SEC_RE = re.compile(r"(?P<value>\d+(?:\.\d+)?)\s+tokens per second", re.IGNORECASE)
+
+def changed_files():
+    # 1. Get list of files changed since the last push
+    diff = subprocess.check_output(
+        ["git", "diff", "--name-only", "HEAD"],
+        text=True
+    ).splitlines()
+
+    # Staged changes (optional)
+    staged = subprocess.check_output(
+        ["git", "diff", "--name-only", "--cached"], 
+        text=True
+    ).splitlines()
+
+    all_changes = set(diff + staged)
+
+    # 2. Filter according to your rules
+    out = []
+    for f in all_changes:
+        if "__pycache__" in f:
+            continue
+        if f in {"app.py", "run.py", "requirements.txt"}:
+            out.append(f)
+        elif (f.startswith("app/") or f.startswith("tests/")) and f.endswith(".py"):
+            out.append(f)
+
+    return out
+
 
 def parse_log(path_string: str = "llama_server.log"):
     """Reads the log and returns a formatted markdown string."""
@@ -31,7 +60,8 @@ def parse_log(path_string: str = "llama_server.log"):
                     break
         
         emoji = "🟢" if proc else "⚫"
-        return f"**Server:** {emoji}\n\n**TPS:** `{tps}`\n\n*{time.strftime('%H:%M:%S')}*"
+        changed_files_list = changed_files()
+        return f"**Server:** {emoji}\n\n**TPS:** `{tps}`\n\n*{time.strftime('%H:%M:%S')}*\n\n>" + '\n\n>'.join(changed_files_list)
     except:
         return "**Error reading log**"
 

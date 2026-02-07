@@ -10,10 +10,10 @@ NGROK_URL = "http://localhost:8000"
 
 MODEL_NAME = "unsloth/gpt-oss-20b-GGUF:F16"
 DEFAULT_SYSTEM_PROMPT = f'''
-Be concise and accurate at all times.
-Tools are available to assist in fulfilling requests.
-When grep searching do not use '-n ..' because it will timeout.
-When sed -n, read at least 500 lines of the file. 
+Respond concisely and accurately.
+Use the provided tools to satisfy user requests.
+• When running grep, omit the -n flag to avoid timeouts.
+• When using sed -n, read at least 500 lines of the target file.
 '''
 
 # --------------------------------------------------------------------------- #
