@@ -97,3 +97,49 @@ def test_apply_patch_delete_nonexistent(tmp_path: Path):
     assert "result" in result
     assert result["result"] == f"File deleted: {relative}"
     assert not target_path.exists()
+
+def test_apply_patch_idempotency_import(tmp_path: Path):
+    """Re-applying the same 'import errno' patch should not result in duplicates."""
+    repo_root = Path(__file__).resolve().parents[1]
+    target_path = repo_root / "tests" / "tmp_idempotency.py"
+    target_path.write_text("import urllib.request\n")
+    relative = _relative_path(target_path)
+    
+    # The diff replaces the line with itself + a new line
+    diff = "@@\n-import urllib.request\n+import urllib.request\n+import errno"
+    
+    # First application
+    apply_patch(relative, "update", diff)
+    content_once = target_path.read_text()
+    
+    # Second application
+    apply_patch(relative, "update", diff)
+    content_twice = target_path.read_text()
+    
+    assert content_once == content_twice
+    assert content_twice.count("import errno") == 1
+    
+    if target_path.exists():
+        target_path.unlink()
+
+def test_apply_patch_stutter_overlap(tmp_path: Path):
+    """Applying a diff that overlaps with existing code should not 'stutter' (triple the lines)."""
+    repo_root = Path(__file__).resolve().parents[1]
+    target_path = repo_root / "tests" / "tmp_stutter.py"
+    # File already has one #5
+    target_path.write_text("import urllib.request\n#5\n")
+    relative = _relative_path(target_path)
+    
+    # Diff says: Replace A with A + #5 + #5. 
+    # Because one #5 already exists, it should only add one more.
+    diff = "@@\n-import urllib.request\n+import urllib.request\n+#5\n+#5"
+    
+    apply_patch(relative, "update", diff)
+    content = target_path.read_text()
+    
+    # We expect exactly two #5s total (the original one + one new one)
+    assert content.count("#5") == 2
+    assert "import urllib.request\n#5\n#5" in content
+    
+    if target_path.exists():
+        target_path.unlink()
