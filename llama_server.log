@@ -3678,3 +3678,22 @@ prompt eval time =   28971.05 ms / 20465 tokens (    1.42 ms per token,   706.39
 slot      release: id  2 | task 51390 | stop processing: n_tokens = 20653, truncated = 0
 srv  update_slots: all slots are idle
 srv  log_server_r: request: POST /v1/chat/completions 127.0.0.1 200
+srv  params_from_: Chat format: GPT-OSS
+slot get_availabl: id  2 | task -1 | selected slot by LCP similarity, sim_best = 0.993 (> 0.100 thold), f_keep = 0.991
+slot launch_slot_: id  2 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> temp-ext -> dist 
+slot launch_slot_: id  2 | task 51590 | processing task, is_child = 0
+slot update_slots: id  2 | task 51590 | new prompt, n_ctx_slot = 64000, n_keep = 0, task.n_tokens = 20613
+slot update_slots: id  2 | task 51590 | n_tokens = 20465, memory_seq_rm [20465, end)
+slot update_slots: id  2 | task 51590 | prompt processing progress, n_tokens = 20549, batch.n_tokens = 84, progress = 0.996895
+slot update_slots: id  2 | task 51590 | n_tokens = 20549, memory_seq_rm [20549, end)
+slot update_slots: id  2 | task 51590 | prompt processing progress, n_tokens = 20613, batch.n_tokens = 64, progress = 1.000000
+slot update_slots: id  2 | task 51590 | prompt done, n_tokens = 20613, batch.n_tokens = 64
+slot init_sampler: id  2 | task 51590 | init sampler, took 10.70 ms, tokens: text = 20613, total = 20613
+slot update_slots: id  2 | task 51590 | created context checkpoint 2 of 8 (pos_min = 19756, pos_max = 20548, size = 18.595 MiB)
+slot print_timing: id  2 | task 51590 | 
+prompt eval time =     626.61 ms /   148 tokens (    4.23 ms per token,   236.19 tokens per second)
+       eval time =   11018.65 ms /   350 tokens (   31.48 ms per token,    31.76 tokens per second)
+      total time =   11645.26 ms /   498 tokens
+slot      release: id  2 | task 51590 | stop processing: n_tokens = 20962, truncated = 0
+srv  log_server_r: request: POST /v1/chat/completions 127.0.0.1 200
+srv  update_slots: all slots are idle
