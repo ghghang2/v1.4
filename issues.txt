@@ -12,6 +12,7 @@ The policy only signals whether an interjection should occur; the supervisor alw
 
 ## 4. Unused `_agent_target` helper in `SupervisorProcess`
 `_agent_target` returns an empty dictionary and is never invoked. The agent is started directly with its arguments, making the helper redundant.
+**Status: ✅ Fixed**
 
 ## 5. Missing persistence layer (`app/db.py`)
 `ChatHistory` is referenced but the implementation file does not exist. Without persistence, chat history cannot be stored or retrieved, breaking the plan for Phase 2.
