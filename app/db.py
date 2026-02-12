@@ -92,12 +92,13 @@ def log_tool_msg(session_id: str, tool_id: str, tool_name: str, tool_args: str, 
 def load_history(session_id: str, limit: int | None = None) -> list[tuple[str, str]]:
     """Return the last *limit* chat pairs for the given session.
 
-    The return value is a list of chat history.
-    If *limit* is ``None`` the entire conversation is returned.
+    The returned list contains tuples of ``(role, content)`` in the order
+    they were inserted.  ``limit`` is applied to the number of rows
+    returned.
     """
     rows: list[tuple[str, str]] = []
     with sqlite3.connect(DB_PATH) as conn:
-        query = "SELECT role, content, tool_id, tool_name, tool_args FROM chat_log WHERE session_id = ? ORDER BY id ASC"
+        query = "SELECT role, content FROM chat_log WHERE session_id = ? ORDER BY id ASC"
         params = [session_id]
         if limit is not None:
             query += " LIMIT ?"

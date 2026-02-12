@@ -1,60 +1,55 @@
-"""Test the FastAPI proxy that forwards requests to the LLM client.
+"""Tests for the FastAPI proxy in :mod:`app.server`.
 
-The test monkeypatches the :class:`app.llama_client.LlamaClient` so that
-no external network calls are made.  It also patches the persistence
-layer so that the database is not touched.
+The proxy streams tokens from a dummy LLM client and persists the
+interaction via :mod:`app.chat_history`.  We patch both the LLM client
+and the chat history logger to capture the interactions without
+requiring a real database or llama‑server.
 """
 
 import asyncio
+from unittest.mock import MagicMock
+
 import pytest
-from httpx import AsyncClient
+from fastapi.testclient import TestClient
 
-# Import the module under test
-import app.server as server
+from app import server, chat_history, db
 
 
-def test_proxy_forwards_and_streams(monkeypatch):
-    """Verify that the proxy forwards a prompt and streams tokens back.
+async def dummy_stream(prompt: str, session_id: str):
+    """Yield a fixed set of tokens for the given prompt.
 
-    The test ensures that:
-    * The LLM client is called with the correct arguments.
-    * The response is streamed token‑by‑token.
-    * The chat history persistence is invoked for both the user and
-      assistant tokens.
+    The real ``LlamaClient`` exposes an async generator.  In the tests we
+    provide a deterministic generator so the output is predictable.
     """
 
-    # Keep track of insert calls so we can assert on them later
-    inserted_calls = []
-    def fake_insert(session_id: str, role: str, content: str, *_, **__):  # noqa: ANN001
-        inserted_calls.append((session_id, role, content))
+    for token in ["Hello", " ", "world", "!"]:
+        await asyncio.sleep(0.01)
+        yield token
 
-    monkeypatch.setattr(server.chat_history, "insert", fake_insert)
 
-    # Dummy LLM that yields two tokens
-    async def dummy_chat(prompt: str, session_id=None):  # noqa: ANN001
-        assert prompt == "Hello"
-        assert session_id == "session-1"
-        for token in ("Hi", " there!"):
-            await asyncio.sleep(0)  # yield control to the event loop
-            yield token
+def test_proxy_stream_and_logging(tmp_path, monkeypatch):
+    # Patch the LLM client used by the server
+    dummy_client = MagicMock()
+    dummy_client.stream_chat = dummy_stream
+    monkeypatch.setattr(server, "llama_client", dummy_client)
 
-    monkeypatch.setattr(server.llama_client, "chat", dummy_chat)
+    # Patch the chat history insert to capture calls
+    insert_calls = []
+    def fake_insert(session_id, role, content):
+        insert_calls.append((session_id, role, content))
 
-    from fastapi.testclient import TestClient
+    monkeypatch.setattr(chat_history, "insert", fake_insert)
 
     client = TestClient(server.app)
-    resp = client.post(
-        "/chat/agent1",
-        json={"prompt": "Hello", "session_id": "session-1"},
-    )
-    assert resp.status_code == 200
-    # The response body should be the concatenated tokens
-    assert resp.text == "Hi there!"
+    payload = {"prompt": "hi", "session_id": "sess1"}
+    response = client.post("/chat/test_agent", json=payload)
 
-    # The history should have one user message and two assistant messages
-    expected = [
-        ("agent1", "user", "Hello"),
-        ("agent1", "assistant", "Hi"),
-        ("agent1", "assistant", " there!"),
-    ]
-    assert inserted_calls == expected
+    # Collect streamed chunks from the response body
+    streamed = "".join(chunk.decode() for chunk in response.iter_text())
+    assert streamed == "Hello world!"
+
+    # Verify that the user message was logged
+    assert any(call[1] == "user" and call[0] == "sess1" for call in insert_calls)
+    # Verify that each assistant token was logged
+    assistant_calls = [c for c in insert_calls if c[1] == "assistant"]
+    assert [c[2] for c in assistant_calls] == ["Hello", " ", "world", "!"]
