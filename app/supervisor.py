@@ -56,37 +56,71 @@ class SupervisorProcess(mp.Process):
         self,
         config: SupervisorConfig | None = None,
         agent_names: list[str] | None = None,
+        agent_processes: dict[str, AgentProcess] | None = None,
         *args,
         **kwargs,
     ):
+        """Create a supervisor.
+
+        Parameters
+        ----------
+        config:
+            Configuration object.  If ``None`` a default
+            :class:`SupervisorConfig` is used.
+        agent_names:
+            List of names to create agents for.  Ignored if
+            ``agent_processes`` is provided.
+        agent_processes:
+            Optional pre‑created :class:`AgentProcess` instances.  When
+            supplied, the supervisor will *not* create new processes –
+            instead it will use the provided ones.  This is useful for
+            unit tests that wish to inject mock agents.
+        """
+
         super().__init__(*args, **kwargs)
         self.config = config or SupervisorConfig()
-        # Agent names determines how many agent processes to spawn.
-        self.agent_names = agent_names or [self.config.agent_name]
-        # Queues for communication with each agent.
-        self.agent_inboxes: dict[str, mp.Queue[AgentEvent]] = {
-            name: mp.Queue() for name in self.agent_names
-        }
-        self.agent_outbounds: dict[str, mp.Queue[AgentEvent]] = {
-            name: mp.Queue() for name in self.agent_names
-        }
+        # If a dict of processes is supplied, use it directly.
+        if agent_processes is not None:
+            self.agent_processes = agent_processes
+            self.agent_names = list(agent_processes.keys())
+            # The AgentProcess exposes its queues via ``inbound_queue`` and
+            # ``outbound_queue`` attributes.  The original code attempted to
+            # access non‑existent ``inbox``/``outbound`` attributes which
+            # caused an ``AttributeError`` at runtime.
+            self.agent_inboxes = {
+                name: agent.inbound_queue for name, agent in agent_processes.items()
+            }
+            self.agent_outbounds = {
+                name: agent.outbound_queue for name, agent in agent_processes.items()
+            }
+        else:
+            # Agent names determines how many agent processes to spawn.
+            self.agent_names = agent_names or [self.config.agent_name]
+            # Queues for communication with each agent.
+            self.agent_inboxes: dict[str, mp.Queue[AgentEvent]] = {
+                name: mp.Queue() for name in self.agent_names
+            }
+            self.agent_outbounds: dict[str, mp.Queue[AgentEvent]] = {
+                name: mp.Queue() for name in self.agent_names
+            }
+            self.agent_processes: dict[str, AgentProcess] = {}
         # External consumers queue
         self.supervisor_outbound: mp.Queue[AgentEvent] = mp.Queue()
         self._terminate_flag = mp.Event()
-        self.agent_processes: dict[str, AgentProcess] = {}
 
     def run(self) -> None:  # pragma: no cover
         log.info("Supervisor starting")
-        # Start the underlying agent process
-        # Start one agent process per name.
-        for name in self.agent_names:
-            agent = AgentProcess(
-                name,
-                self.agent_inboxes[name],
-                self.agent_outbounds[name],
-            )
-            agent.start()
-            self.agent_processes[name] = agent
+        # Start the underlying agent process only if we didn't receive
+        # them via ``agent_processes`` in ``__init__``.
+        if not self.agent_processes:
+            for name in self.agent_names:
+                agent = AgentProcess(
+                    name,
+                    self.agent_inboxes[name],
+                    self.agent_outbounds[name],
+                )
+                agent.start()
+                self.agent_processes[name] = agent
         # Main event loop
         while not self._terminate_flag.is_set():
             for name, out_q in self.agent_outbounds.items():
@@ -117,16 +151,27 @@ class SupervisorProcess(mp.Process):
         log.info("Supervisor terminating")
 
     def terminate(self) -> None:  # pragma: no cover
+        """Gracefully shut down the supervisor and all child agents.
+
+        The method sends a ``shutdown`` event to every agent inbox
+        instead of calling :meth:`multiprocessing.Process.terminate`
+        directly.  This gives the agent a chance to exit its event loop
+        and clean up resources before the process is terminated.
+        """
         self._terminate_flag.set()
-        # ``self.agent_process`` does not exist; the correct attribute is
-        # ``self.agent_processes``.  The original code attempted to
-        # reference an undefined variable which caused an
-        # ``IndentationError`` during import.  The corrected logic
-        # terminates each child process cleanly.
+        for name, inbox in self.agent_inboxes.items():
+            try:
+                inbox.put(AgentEvent(role="assistant", content="", type="shutdown"))
+            except Exception:  # pragma: no cover - unlikely
+                pass
+        # Wait for child processes to finish
         for agent in self.agent_processes.values():
             if agent.is_alive():
-                agent.terminate()
-                agent.join()
+                agent.join(timeout=1.0)
+                if agent.is_alive():
+                    # As a last resort force terminate
+                    agent.terminate()
+                    agent.join()
         super().terminate()
 
 
