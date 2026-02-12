@@ -1,5 +1,9 @@
+playwright
+requests
+uvicorn
 openai
 streamlit
 gitpython
 PyGithub
 playwright
+requests
