@@ -284,7 +284,7 @@ def process_tool_calls(
                             if tool_name in ['browser', 'run_tests']:
                                 timeout_sec = 60
                             else: 
-                                timeout_sec = 10
+                                timeout_sec = 30
                             future = executor.submit(func, **args)
                             result = future.result(timeout=timeout_sec)
                         except concurrent.futures.TimeoutError:  # pragma: no cover
