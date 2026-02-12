@@ -86,7 +86,7 @@ class AgentProcess(Process):
 
     def _initialize_llm(self) -> None:
         if LlamaClient is None:
-            raise RuntimeError("LlamaClient not available – missing llama_client module")
+            raise RuntimeError("LlamaClient not available \u2013 missing llama_client module")
         self.client = LlamaClient()
 
     def run(self) -> None:  # pragma: no cover – executed in a separate process
@@ -94,67 +94,62 @@ class AgentProcess(Process):
         try:
             self._initialize_llm()
             log.info("Agent process started")
-            self._main_loop()
+            # Create a single event loop for the whole process
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.loop.create_task(self._main_loop_async())
+            self.loop.run_forever()
         except Exception as exc:  # pragma: no cover
             log.exception("Fatal error in agent process: %s", exc)
             sys.exit(1)
 
-    def _main_loop(self) -> None:
-        """Continuously process incoming chat messages.
+    async def _main_loop_async(self) -> None:
+        """Async main loop that processes incoming chat messages.
 
-        Expected queue entries: :class:`AgentEvent`.
+        Uses :func:`asyncio.get_running_loop` and a thread‑safety wrapper
+        around the queue's ``get`` method.
         """
         while True:
-            event: AgentEvent = self.inbound_queue.get()
-            # ``AgentEvent`` is a dataclass; we use its ``type`` field
+            event: AgentEvent = await asyncio.get_running_loop().run_in_executor(
+                None, self.inbound_queue.get
+            )
             if getattr(event, "type", None) == "shutdown":
                 log.info("Shutdown signal received")
+                self.loop.stop()
                 break
-            # The event should contain a session_id and prompt
             session_id = getattr(event, "session_id", None)
             prompt = getattr(event, "prompt", None)
             if not session_id or not prompt:
                 log.warning("Malformed message: %s", event)
                 continue
-            self._handle_chat(session_id, prompt)
+            await self._handle_chat_async(session_id, prompt)
 
-    def _handle_chat(self, session_id: str, prompt: str) -> None:
-        """Send prompt to LLM and stream tokens back via outbound queue.
+    async def _handle_chat_async(self, session_id: str, prompt: str) -> None:
+        """Async version of :meth:`_handle_chat`.
 
-        The real :class:`app.llama_client.LlamaClient` exposes a ``chat``
-        coroutine that yields tokens.  The tests patch ``LlamaClient`` with
-        a dummy implementation that provides a ``stream_chat`` method.
-        To remain compatible with both the production client and the
-        test double we first try ``stream_chat`` and fall back to ``chat``.
+        Runs in the agent's single event loop.
         """
-
-        async def _stream():
-            if self.client is None:
-                raise RuntimeError("LLM client not initialized")
-            # Prefer ``stream_chat`` if present – this is what the test
-            # double provides.  Otherwise fall back to ``chat``.
-            stream_fn = getattr(self.client, "stream_chat", None) or getattr(self.client, "chat", None)
-            if stream_fn is None:
-                raise RuntimeError("LLM client lacks streaming interface")
-            async for token in stream_fn(prompt):
-                payload = AgentEvent(
-                    role="assistant",
-                    content="",
-                    token=token,
-                    session_id=session_id,
-                    agent_id=self.agent_id,
-                    type="token",
-                )
-                self.outbound_queue.put(payload)
-            # Notify supervisor of completion – include the original prompt
-            done_event = AgentEvent(
+        if self.client is None:
+            raise RuntimeError("LLM client not initialized")
+        stream_fn = getattr(self.client, "stream_chat", None) or getattr(self.client, "chat", None)
+        if stream_fn is None:
+            raise RuntimeError("LLM client lacks streaming interface")
+        async for token in stream_fn(prompt):
+            payload = AgentEvent(
                 role="assistant",
                 content="",
+                token=token,
                 session_id=session_id,
                 agent_id=self.agent_id,
-                type="done",
-                prompt=prompt,
+                type="token",
             )
-            self.outbound_queue.put(done_event)
-
-        asyncio.run(_stream())
+            self.outbound_queue.put(payload)
+        done_event = AgentEvent(
+            role="assistant",
+            content="",
+            session_id=session_id,
+            agent_id=self.agent_id,
+            type="done",
+            prompt=prompt,
+        )
+        self.outbound_queue.put(done_event)
