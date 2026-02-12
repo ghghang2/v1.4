@@ -1,48 +1,13 @@
-"""Stateless Browser Tool for OpenAI Function Calling.
-
-This module provides a robust, stateless wrapper around Playwright.
-Each call launches a fresh browser instance, performs a sequence of actions,
-returns the result, and cleans up immediately. This prevents threading
-crashes and "protocol" errors common in long-running sessions.
-"""
+"""Stateless Chromium Browser Tool with Automation Evasion."""
 
 from __future__ import annotations
-
 import json
 from typing import Any, List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor
 from playwright.sync_api import sync_playwright
 
 def browser(url: str, actions: Optional[List[Dict[str, Any]]] = None, selector: Optional[str] = None, **kwargs) -> str:
-    """
-    Visit a webpage, perform optional interactions, and extract content.
-    
-    This tool is STATELESS: It opens a browser, runs your commands, and closes.
-    You cannot "keep" the browser open between calls.
-    
-    Parameters
-    ----------
-    url : str
-        The URL to visit.
-    actions : List[Dict], optional
-        A list of interactions to perform before extracting data.
-        Supported action types:
-        - {"type": "click", "selector": "..."}
-        - {"type": "type", "selector": "...", "text": "..."}
-        - {"type": "wait", "selector": "..."} (or "timeout": ms)
-        - {"type": "screenshot", "path": "..."}
-    selector : str, optional
-        A specific CSS selector to extract text from. If None, returns the full page text.
-    **kwargs :
-        Handles "hallucinated" nested JSON arguments from some LLMs.
-
-    Returns
-    -------
-    str
-        JSON string containing the extracted text, source, or operation results.
-    """
-
-    # --- 1. ARGUMENT UNPACKING (Fixes the "url is required" error) ---
-    # LLMs sometimes wrap args inside a 'kwargs' string. We unpack them here.
+    # --- 1. ARGUMENT UNPACKING ---
     if kwargs.get("kwargs") and isinstance(kwargs["kwargs"], str):
         try:
             extra_args = json.loads(kwargs["kwargs"])
@@ -56,134 +21,76 @@ def browser(url: str, actions: Optional[List[Dict[str, Any]]] = None, selector: 
     if not url:
         return json.dumps({"error": "URL is required."})
 
-    # --- 2. STATELESS EXECUTION (Fixes the "thread" error) ---
-    import threading
-
-    result_container = {"result": None, "error": None}
-
-    def run_sync():
+    def run_chromium_stealth(target_url, target_actions, target_selector):
         try:
             with sync_playwright() as p:
-                browser = p.firefox.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-                context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                # 1. Chromium-specific "Stealth" flags
+                # '--disable-blink-features=AutomationControlled' is the key to hiding webdriver
+                browser_instance = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled",
+                        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                    ]
                 )
+                
+                context = browser_instance.new_context(
+                    viewport={'width': 1920, 'height': 1080}
+                )
+
+                # 2. JavaScript injection to clean up any remaining bot-traces
+                context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    window.chrome = { runtime: {} };
+                    Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                """)
+
                 page = context.new_page()
-                # Navigate
+
                 try:
-                    page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                    # News sites like The Hill often load better with 'networkidle'
+                    # which waits for all the tracking scripts to settle.
+                    page.goto(target_url, timeout=45000, wait_until="networkidle")
                 except Exception as e:
-                    result_container["error"] = f"Navigation failed: {str(e)}"
-                    return
-                # Perform Actions (if any)
-                interaction_log = []
-                if actions:
-                    for act in actions:
-                        act_type = act.get("type")
-                        try:
-                            if act_type == "click":
-                                page.click(act["selector"], timeout=5000)
-                                interaction_log.append(f"Clicked {act['selector']}")
-                            elif act_type == "type":
-                                page.fill(act["selector"], act["text"], timeout=5000)
-                                interaction_log.append(f"Typed into {act['selector']}")
-                            elif act_type == "wait":
-                                if "selector" in act:
-                                    page.wait_for_selector(act["selector"], timeout=10000)
-                                elif "timeout" in act:
-                                    page.wait_for_timeout(act["timeout"])
-                                interaction_log.append(f"Waited for {act.get('selector') or act.get('timeout')}")
-                            elif act_type == "screenshot":
-                                path = act.get("path", "screenshot.png")
-                                page.screenshot(path=path)
-                                interaction_log.append(f"Screenshot saved to {path}")
-                        except Exception as e:
-                            interaction_log.append(f"Error during {act_type}: {str(e)}")
-                # Extract Content
+                    browser_instance.close()
+                    return json.dumps({"error": f"Navigation failed: {str(e)}"})
+
+                # --- 3. DETECTION CHECK & EXTRACTION ---
+                page_content = page.evaluate("() => document.body.innerText")
+                
+                # If we still hit the "Press & Hold", try one human-like scroll
+                if "Press & Hold" in page_content or "confirm you are a human" in page_content:
+                    page.mouse.wheel(0, 400)
+                    page.wait_for_timeout(2000)
+                    page_content = page.evaluate("() => document.body.innerText")
+
+                # Extraction Logic
                 content = ""
-                if selector:
+                if target_selector:
                     try:
-                        page.wait_for_selector(selector, timeout=5000)
-                        elements = page.locator(selector).all_inner_texts()
-                        content = "\n".join(elements)
-                    except Exception as e:
-                        content = f"Element '{selector}' not found: {str(e)}"
+                        page.wait_for_selector(target_selector, timeout=5000)
+                        content = "\n".join(page.locator(target_selector).all_inner_texts())
+                    except:
+                        content = f"Selector '{target_selector}' not found."
                 else:
+                    # Clean up the body text to remove script tags
                     content = page.evaluate("() => document.body.innerText")
-                browser.close()
-                result_container["result"] = json.dumps({
+
+                browser_instance.close()
+                return json.dumps({
                     "status": "success",
-                    "url": url,
-                    "interactions": interaction_log,
-                    "content": content[:5000]
+                    "url": target_url,
+                    "content": content[:5000].strip()
                 })
-        except Exception as global_ex:
-            result_container["error"] = f"Browser tool error: {str(global_ex)}"
+        except Exception as e:
+            return json.dumps({"error": f"Internal Error: {str(e)}"})
 
-    thread = threading.Thread(target=run_sync)
-    thread.start()
-    thread.join()
-
-    if result_container["error"]:
-        return json.dumps({"error": result_container["error"]})
-    return result_container["result"]
-
-            # Navigate
-            try:
-                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            except Exception as e:
-                return json.dumps({"error": f"Navigation failed: {str(e)}"})
-
-            # Perform Actions (if any)
-            interaction_log = []
-            if actions:
-                for act in actions:
-                    act_type = act.get("type")
-                    try:
-                        if act_type == "click":
-                            await page.click(act["selector"], timeout=5000)
-                            interaction_log.append(f"Clicked {act['selector']}")
-                        elif act_type == "type":
-                            await page.fill(act["selector"], act["text"], timeout=5000)
-                            interaction_log.append(f"Typed into {act['selector']}")
-                        elif act_type == "wait":
-                            if "selector" in act:
-                                await page.wait_for_selector(act["selector"], timeout=10000)
-                            elif "timeout" in act:
-                                await page.wait_for_timeout(act["timeout"])
-                            interaction_log.append(f"Waited for {act.get('selector') or act.get('timeout')}")
-                        elif act_type == "screenshot":
-                            path = act.get("path", "screenshot.png")
-                            await page.screenshot(path=path)
-                            interaction_log.append(f"Screenshot saved to {path}")
-                    except Exception as e:
-                        interaction_log.append(f"Error during {act_type}: {str(e)}")
-
-            # Extract Content
-            content = ""
-            if selector:
-                try:
-                    # Try to get specific element
-                    await page.wait_for_selector(selector, timeout=5000)
-                    elements = await page.locator(selector).all_inner_texts()
-                    content = "\n".join(elements)
-                except Exception as e:
-                    content = f"Element '{selector}' not found: {str(e)}"
-            else:
-                # Default: Get the main readable text
-                content = await page.evaluate("() => document.body.innerText")
-
-            await browser.close()
-            
-            return json.dumps({
-                "status": "success",
-                "url": url,
-                "interactions": interaction_log,
-                "content": content[:5000]  # Truncate to avoid context limit overflow
-            })
-
-    except Exception as global_ex:
-        return json.dumps({"error": f"Browser tool error: {str(global_ex)}"})
+    # --- 4. RUN IN THREAD ---
+    with ThreadPoolExecutor() as executor:
+        return executor.submit(run_chromium_stealth, url, actions, selector).result()
 
 # ---------------------------------------------------------------------------
 # Tool Definition
@@ -191,7 +98,7 @@ def browser(url: str, actions: Optional[List[Dict[str, Any]]] = None, selector: 
 func = browser
 name = "browser"
 description = """
-Safe, stateless browser tool. Use this to visit a website and extract content.
+Browser tool. Use this to visit a website and extract content.
 This tool CANNOT maintain a session. Every call is a fresh visit.
 
 Inputs:
