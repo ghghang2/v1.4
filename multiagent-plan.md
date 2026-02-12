@@ -14,17 +14,15 @@ Each phase contains concrete, incremental tasks and the tools we will use.
 
 ---
 
-## Phase 1 – Environment & Tooling Setup
+## Phase 1 – Environment & Tooling Setup (Completed)
 
 | Step | Action | Tool | Notes |
 |------|--------|------|-------|
-| 1.1 | Create a clean virtual environment (venv) | `python -m venv .venv` | Use Python 3.12. |
-| 1.2 | Install required packages | `pip install flask fastapi uvicorn pytest requests` | `flask` for simple HTTP proxy; `fastapi` for supervisor API; `pytest` for tests; `requests` for browser tool. |
-| 1.3 | Add `uvicorn` as ASGI server for async components. | | |
-| 1.4 | Verify `llama-server` is reachable via a test curl or python request. | | Create a simple `tests/test_llama.py` to hit `/v1/chat/completions`. |
-| 1.5 | Set up basic project structure: `app/`, `app/tools/`, `tests/`. | | Already in repo. |
+| 1.1 | Add `uvicorn` as ASGI server for async components. | | |
+| 1.2 | Verify `llama-server` is reachable via a test curl or python request. | | Create a simple `tests/test_llama.py` to hit `/v1/chat/completions`. |
+| 1.3 | Set up basic project structure: `app/`, `app/tools/`, `tests/`. | | Already in repo. |
 
-**Deliverables**: Virtual environment ready, minimal test against `llama-server` passes.
+**Deliverables**: Minimal test against `llama-server` passes.
 
 ---
 
@@ -128,9 +126,6 @@ Each phase contains concrete, incremental tasks and the tools we will use.
   - How to add more agents.
 - Generate `repo_overview.md` using the existing tool.
 
-### 5.4 CI / GitHub Actions
-- Add a `.github/workflows/ci.yml` that runs `pytest` on push.
-
 ---
 
 ## Timeline & Milestones
@@ -153,10 +148,3 @@ Each phase contains concrete, incremental tasks and the tools we will use.
 | 4 | Supervisor may miss interjections | Log all events; add unit tests for policy path |
 
 ---
-
-## Next Steps
-1. Create the `multiagent-plan` file with this content.
-2. Start implementing Phase 1 tasks.
-3. Incrementally commit each phase.
-
-Happy coding!
