@@ -469,15 +469,17 @@ class ChatUI:
     
     def _stream_assistant_response(self, client, tools, chat, messages):
         """Stream the assistant response and handle tool calls."""
-        # Create placeholder for assistant message
+        # Create placeholders for reasoning and assistant messages
+        reasoning_placeholder = widgets.HTML(
+            value='<div style="background-color: #fff3e0; padding: 10px; border-radius: 10px; margin: 5px;"><details open><summary><b>Reasoning</b></summary><i>Waiting for reasoning...</i></details></div>',
+            layout=widgets.Layout(width="100%", margin="5px 0")
+        )
         assistant_placeholder = widgets.HTML(
             value='<div style="background-color: #f1f8e9; padding: 10px; border-radius: 10px; margin: 5px;"><b>Assistant:</b> <i>Thinking...</i></div>',
             layout=widgets.Layout(width="100%", margin="5px 0")
         )
-        reasoning_placeholder = None
-        
-        # Add assistant placeholder to UI
-        self.chat_history.children = list(self.chat_history.children) + [assistant_placeholder]
+        # Add placeholders to UI (reasoning first, then assistant)
+        self.chat_history.children = list(self.chat_history.children) + [reasoning_placeholder, assistant_placeholder]
         
         # Initialize accumulators
         reasoning_text = ""
@@ -504,17 +506,6 @@ class ChatUI:
             # Reasoning content
             if hasattr(delta, "reasoning_content") and delta.reasoning_content:
                 reasoning_text += delta.reasoning_content
-                if reasoning_placeholder is None:
-                    # Create reasoning placeholder and insert before assistant placeholder
-                    reasoning_placeholder = widgets.HTML(
-                        value='<div style="background-color: #fff3e0; padding: 10px; border-radius: 10px; margin: 5px;"><details open><summary><b>Reasoning</b></summary></div>',
-                        layout=widgets.Layout(width="100%", margin="5px 0")
-                    )
-                    # Insert reasoning placeholder before assistant placeholder
-                    children = list(self.chat_history.children)
-                    idx = children.index(assistant_placeholder)
-                    children.insert(idx, reasoning_placeholder)
-                    self.chat_history.children = children
                 # Update reasoning placeholder
                 reasoning_placeholder.value = f'''
                 <div style="background-color: #fff3e0; padding: 10px; border-radius: 10px; margin: 5px;">
@@ -746,10 +737,7 @@ class ChatUI:
                 tool_calls2, finished2, assistant_text2, reasoning_text2
             )
         
-        return history
-    
-    def _show_notification(self, message: str, duration: int = 3):
-        """Show a temporary notification."""
+        return history        """Show a temporary notification."""
         notification = widgets.HTML(
             value=f'<div style="background-color: #333; color: white; padding: 10px; border-radius: 5px; position: fixed; top: 10px; right: 10px; z-index: 1000;">{message}</div>',
             layout=widgets.Layout(width="auto")

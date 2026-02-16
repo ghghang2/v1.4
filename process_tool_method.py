@@ -1,0 +1,176 @@
+    def _process_tool_calls(self, client, messages, session_id, history, tools, tool_calls, finished, assistant_text, reasoning_text):
+        """Execute tools and continue the conversation, handling multiple tool calls in one turn."""
+        if not tool_calls:
+            return history
+        
+        import json
+        import concurrent.futures
+        from app.tools import TOOLS
+        
+        # --- 1. Construct the assistant message that contains all tool calls ---
+        tool_calls_list = []
+        for tc in tool_calls:
+            tool_calls_list.append({
+                "id": tc.get("id"),
+                "type": "function",
+                "function": {
+                    "name": tc.get("name"),
+                    "arguments": tc.get("arguments") or "{}",
+                },
+            })
+        
+        assistant_msg = {
+            "role": "assistant",
+            "content": assistant_text,
+            "reasoning_content": reasoning_text,
+            "tool_calls": tool_calls_list,
+        }
+        messages.append(assistant_msg)
+        
+        # Store reasoning in history (as before)
+        if reasoning_text:
+            history.append(("analysis", reasoning_text, "", "", ""))
+        
+        # Store the combined assistant turn in history.
+        tool_calls_data = json.dumps([
+            {"id": tc.get("id"), "name": tc.get("name"), "args": tc.get("arguments")}
+            for tc in tool_calls
+        ])
+        history.append(("assistant", assistant_text, "multiple", "tool_calls", tool_calls_data))
+        
+        # --- 2. Execute each tool and append tool responses ---
+        for tc in tool_calls:
+            tool_id = tc.get("id")
+            tool_name = tc.get("name")
+            tool_args = tc.get("arguments") or "{}"
+            
+            try:
+                args = json.loads(tool_args)
+            except Exception as exc:
+                args = {}
+                result = f"❌ JSON error: {exc}"
+            else:
+                func = next((t.func for t in TOOLS if t.name == tool_name), None)
+                if func:
+                    try:
+                        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                        try:
+                            timeout_sec = 60 if tool_name in ['browser', 'run_tests'] else 30
+                            future = executor.submit(func, **args)
+                            result = future.result(timeout=timeout_sec)
+                        except concurrent.futures.TimeoutError:
+                            result = f"⛔ Tool call {tool_name} timed out after {timeout_sec} seconds."
+                        except Exception as exc:
+                            result = f"❌ Tool error: {exc}"
+                        finally:
+                            executor.shutdown(wait=False)
+                    except Exception as exc:
+                        result = f"❌ Tool error: {exc}"
+                else:
+                    result = f"⚠️ Unknown tool '{tool_name}'"
+            
+            # Display tool result as a collapsible HTML widget
+            preview = result[:50] + ("…" if len(result) > 50 else "")
+            tool_html = f'''
+            <div style="background-color: #fce4ec; padding: 10px; border-radius: 10px; margin: 5px;">
+                <details>
+                    <summary><b>Tool result ({tool_name})</b>: {preview}</summary>
+                    <pre>{result}</pre>
+                </details>
+            </div>
+            '''
+            tool_widget = widgets.HTML(value=tool_html, layout=widgets.Layout(width="100%", margin="5px 0"))
+            # Add to chat history
+            self.chat_history.children = list(self.chat_history.children) + [tool_widget]
+            
+            # Append tool response to messages
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": result,
+            })
+            
+            # Append to history
+            history.append(("tool", result, tool_id, tool_name, tool_args))
+            
+            # Log to DB
+            db = lazy_import("app.db")
+            db.log_tool_msg(session_id, tool_id, tool_name, tool_args, result)
+        
+        # --- 3. Get the next assistant response (may be final answer or more tool calls) ---
+        # We'll reuse _stream_assistant_response for the next turn, but we need to pass updated messages and history.
+        # However, we can call stream_and_collect again, but we need to integrate with UI.
+        # Simpler: we call _stream_assistant_response again with the updated messages and empty user input.
+        # But we need to avoid infinite recursion. Instead, we'll manually stream the next assistant response.
+        # Let's create a new streaming loop similar to the first part.
+        
+        # Create placeholder for next assistant turn
+        next_assistant_placeholder = widgets.HTML(
+            value='<div style="background-color: #f1f8e9; padding: 10px; border-radius: 10px; margin: 5px;"><b>Assistant:</b> <i>Processing tool results...</i></div>',
+            layout=widgets.Layout(width="100%", margin="5px 0")
+        )
+        self.chat_history.children = list(self.chat_history.children) + [next_assistant_placeholder]
+        
+        reasoning_text2 = ""
+        assistant_text2 = ""
+        tool_calls_buffer2 = {}
+        finished2 = False
+        
+        stream2 = client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            stream=True,
+            tools=tools,
+        )
+        
+        for chunk in stream2:
+            choice = chunk.choices[0]
+            if choice.finish_reason == "stop":
+                finished2 = True
+                break
+            delta = choice.delta
+            
+            if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                reasoning_text2 += delta.reasoning_content
+                # We could update a reasoning placeholder, but we didn't create one.
+                # For simplicity, we'll just accumulate and display at the end.
+            
+            if delta.content:
+                assistant_text2 += delta.content
+                next_assistant_placeholder.value = f'''
+                <div style="background-color: #f1f8e9; padding: 10px; border-radius: 10px; margin: 5px;">
+                    <b>Assistant:</b> {assistant_text2}
+                </div>
+                '''
+            
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_buffer2:
+                        tool_calls_buffer2[idx] = {
+                            "id": tc_delta.id,
+                            "name": tc_delta.function.name,
+                            "arguments": "",
+                        }
+                    if tc_delta.function.arguments:
+                        tool_calls_buffer2[idx]["arguments"] += tc_delta.function.arguments
+        
+        tool_calls2 = list(tool_calls_buffer2.values()) if tool_calls_buffer2 else None
+        
+        # Store new reasoning and assistant messages
+        db = lazy_import("app.db")
+        if reasoning_text2:
+            history.append(("analysis", reasoning_text2, "", "", ""))
+            db.log_message(session_id, "analysis", reasoning_text2)
+        if assistant_text2:
+            history.append(("assistant", assistant_text2, "", "", ""))
+            db.log_message(session_id, "assistant", assistant_text2)
+        
+        # If there are more tool calls, recursively process them
+        if tool_calls2 and not finished2:
+            history = self._process_tool_calls(
+                client, messages, session_id, history, tools,
+                tool_calls2, finished2, assistant_text2, reasoning_text2
+            )
+        
+        return history
