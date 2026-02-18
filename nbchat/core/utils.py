@@ -13,7 +13,8 @@ def md_to_html(text: str) -> str:
 
     This is the same implementation that lived in the legacy file.
     """
-    return markdown.markdown(text, extensions=["fenced_code", "codehilite"])
+    # Enable the tables extension so markdown tables render correctly.
+    return markdown.markdown(text, extensions=["fenced_code", "codehilite", "tables"])
 
 
 # Lazy import helper – copied from nbchat_v2.

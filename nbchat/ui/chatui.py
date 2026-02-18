@@ -16,6 +16,11 @@ from IPython.display import display
 
 from nbchat.ui import styles
 from nbchat.core.utils import lazy_import, md_to_html
+# Import changed_files from metrics_ui to display list of changed files
+try:
+    from app.metrics_ui import changed_files  # type: ignore
+except Exception:  # pragma: no cover - fallback if import fails
+    changed_files = lambda: []
 
 class ChatUI:
     """Chat interface with streaming, reasoning, and safe tool execution."""
@@ -160,6 +165,13 @@ class ChatUI:
                                     break
                         emoji = "🟢" if proc else "⚫"
                         content = f"<b>Server</b> {emoji}<br><b>TPS:</b> <code>{tps}</code><br><i>{time.strftime('%H:%M:%S')}</i>"
+                        # Append list of changed files to the metrics display
+                        try:
+                            changed_files_list = changed_files()
+                        except Exception as e:
+                            changed_files_list = [f"Error retrieving changed files: {e}"]
+                        if changed_files_list:
+                            content += "<br><br><b>Changed files:</b><br>" + "<br>".join(changed_files_list)
                     else:
                         content = "<i>Log file not found</i>"
                 except Exception as e:
@@ -177,7 +189,7 @@ class ChatUI:
     def _load_history(self):
         db = lazy_import("nbchat.core.db")
         rows = db.load_history(self.session_id)
-        self.history = [(role, content, "", "", "") for role, content in rows]
+        self.history = rows
         self._render_history()
 
     def _render_history(self):
@@ -350,7 +362,23 @@ class ChatUI:
             if role == "user":
                 messages.append({"role": "user", "content": content})
             elif role == "assistant":
-                messages.append({"role": "assistant", "content": content})
+                if tool_id:
+                    # Assistant row with a tool call (stored by log_tool_msg)
+                    # Construct a proper assistant message with tool_calls
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": [
+                            {
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {"name": tool_name, "arguments": tool_args}
+                            }
+                        ]
+                    }
+                    messages.append(assistant_msg)
+                else:
+                    messages.append({"role": "assistant", "content": content})
             elif role == "assistant_full":
                 try:
                     full_msg = json.loads(tool_args)
@@ -444,6 +472,7 @@ class ChatUI:
         from nbchat.tools import TOOLS
         try:
             args = json.loads(args_json)
+            print(tool_name, args_json)
         except Exception as e:
             return f"❌ Failed to parse tool arguments: {e}"
         func = next((t.func for t in TOOLS if t.name == tool_name), None)
