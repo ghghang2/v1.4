@@ -3,11 +3,9 @@ from __future__ import annotations
 import ipywidgets as widgets
 import json
 import re
-# import subprocess
 import threading
 import time
 import uuid
-# from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from typing import List, Tuple
 
