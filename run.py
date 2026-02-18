@@ -69,17 +69,17 @@ def _wait_for(url: str, *, timeout: int = 30, interval: float = 1.0) -> bool:
         time.sleep(interval)
     return False
 
-def _save_service_info(tunnel_url: str, llama: int, streamlit: int, ngrok: int) -> None:
-    """Persist the running process IDs and the public tunnel URL."""
-    data = {
-        "tunnel_url": tunnel_url,
-        "llama_server_pid": llama,
-        "streamlit_pid": streamlit,
-        "ngrok_pid": ngrok,
-        "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    SERVICE_INFO.write_text(json.dumps(data, indent=2))
-    Path("tunnel_url.txt").write_text(tunnel_url)
+# def _save_service_info(tunnel_url: str, llama: int, streamlit: int, ngrok: int) -> None:
+#     """Persist the running process IDs and the public tunnel URL."""
+#     data = {
+#         "tunnel_url": tunnel_url,
+#         "llama_server_pid": llama,
+#         "streamlit_pid": streamlit,
+#         "ngrok_pid": ngrok,
+#         "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+#     }
+#     SERVICE_INFO.write_text(json.dumps(data, indent=2))
+#     Path("tunnel_url.txt").write_text(tunnel_url)
 
 # --------------------------------------------------------------------------- #
 #  Core logic – start the services
@@ -193,7 +193,7 @@ def main() -> None:
 #     print(f"Public URL: {tunnel_url}")
 
     # Persist state
-    _save_service_info("tunnel_url", llama_proc.pid, "streamlit_proc.pid", "ngrok_proc.pid")
+    # _save_service_info("tunnel_url", llama_proc.pid, "streamlit_proc.pid", "ngrok_proc.pid")
 
     print("\nALL SERVICES RUNNING SUCCESSFULLY!")
     print("=" * 70)

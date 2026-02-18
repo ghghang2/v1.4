@@ -14,8 +14,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import markdown  # for markdown rendering
 from IPython.display import display
 
-from nbchat.ui import styles
-from nbchat.core.utils import lazy_import, md_to_html
+from nbchat.ui import chat_renderer as renderer
+from nbchat.ui import tool_executor as executor
+from nbchat.ui import chat_builder
+from nbchat.core.utils import lazy_import
 # Import changed_files from metrics_ui to display list of changed files
 try:
     from app.metrics_ui import changed_files  # type: ignore
@@ -197,57 +199,45 @@ class ChatUI:
         children = []
         for role, content, tool_id, tool_name, tool_args in self.history:
             if role == "user":
-                children.append(self._render_user_message(content))
+                children.append(renderer.render_user(content))
             elif role == "analysis":
-                children.append(self._render_analysis_message(content))
+                children.append(renderer.render_reasoning(content))
             elif role == "assistant":
                 children.append(self._render_assistant_message(content, tool_id, tool_name, tool_args))
             elif role == "assistant_full":
-                # Full assistant message (with reasoning and tool calls)
                 try:
                     full_msg = json.loads(tool_args)
                     reasoning = full_msg.get("reasoning_content", "")
                     msg_content = full_msg.get("content", "")
                     tool_calls = full_msg.get("tool_calls", [])
-                    html = styles.assistant_full_html(reasoning, msg_content, tool_calls)
-                    children.append(widgets.HTML(value=html, layout=widgets.Layout(width="100%", margin="0")))
-                except:
+                    children.append(renderer.render_assistant_full(reasoning, msg_content, tool_calls))
+                except Exception:
                     children.append(self._render_assistant_message(content, "", "", ""))
             elif role == "tool":
-                children.append(self._render_tool_message(content, tool_id, tool_name, tool_args))
+                children.append(renderer.render_tool(content, tool_name))
         self.chat_history.children = children
 
-    def _render_user_message(self, content: str) -> widgets.HTML:
-        return styles.create_user_widget(content)
+    # def _render_user_message(self, content: str) -> widgets.HTML:
+    #     return renderer.render_user(content)
 
-    def _render_analysis_message(self, content: str) -> widgets.HTML:
-
-        return styles.create_reasoning_widget(content)
+    # def _render_analysis_message(self, content: str) -> widgets.HTML:
+    #     return renderer.render_reasoning(content)
 
     def _render_assistant_message(self, content: str, tool_id: str, tool_name: str, tool_args: str) -> widgets.HTML:
 
         if tool_id == "multiple":
-
             try:
-
                 tool_calls = json.loads(tool_args)
-
-                return styles.create_assistant_with_tools_widget(content, tool_calls)
-
-            except:
-
-                return styles.create_assistant_widget(content)
-
+                return renderer.render_assistant_with_tools(content, tool_calls)
+            except Exception:
+                return renderer.render_assistant(content)
         elif tool_id:
-
-            return styles.create_assistant_with_single_tool_widget(content, tool_name, tool_args)
-
+            return renderer.render_assistant_with_single_tool(content, tool_name, tool_args)
         else:
-
-            return styles.create_assistant_widget(content)
+            return renderer.render_assistant(content)
 
     def _render_tool_message(self, content: str, tool_id: str, tool_name: str, tool_args: str) -> widgets.HTML:
-        return styles.create_tool_widget(content, tool_name)
+        return renderer.render_tool(content, tool_name)
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -275,7 +265,7 @@ class ChatUI:
         self.input_text.value = ""
         self.history.append(("user", user_input, "", "", ""))
         # Append user message directly to UI to avoid rebuild snap
-        self.chat_history.children = list(self.chat_history.children) + [self._render_user_message(user_input)]
+        self.chat_history.children = list(self.chat_history.children) + [renderer.render_user(user_input)]
         db = lazy_import("nbchat.core.db")
         db.log_message(self.session_id, "user", user_input)
         self._process_conversation_turn()
@@ -286,9 +276,12 @@ class ChatUI:
     def _process_conversation_turn(self):
         client = lazy_import("nbchat.core.client")
         tools = lazy_import("nbchat.tools")
-
-        messages = self._build_messages_for_api()
-        messages = self._strip_reasoning_content(messages)  # New user turn
+        db = lazy_import("nbchat.core.db")
+        messages = chat_builder.build_messages(self.history, self.system_prompt)
+        # Strip reasoning_content from assistant messages before sending to API
+        for msg in messages:
+            if msg.get("role") == "assistant" and "reasoning_content" in msg:
+                del msg["reasoning_content"]
 
         tool_turn_count = 0
 
@@ -300,14 +293,12 @@ class ChatUI:
             # Store reasoning in history and database (UI already updated via placeholder)
             if reasoning:
                 self.history.append(("analysis", reasoning, "", "", ""))
-                db = lazy_import("nbchat.core.db")
                 db.log_message(self.session_id, "analysis", reasoning)
 
             if not tool_calls or finish_reason != "tool_calls":
                 # Final assistant message – store in history (UI already has placeholder with final content)
                 if content:
                     self.history.append(("assistant", content, "", "", ""))
-                    db = lazy_import("nbchat.core.db")
                     db.log_message(self.session_id, "assistant", content)
                 break
 
@@ -318,7 +309,6 @@ class ChatUI:
                 warning_widget = self._render_assistant_message(warning, "", "", "")
                 self.chat_history.children = list(self.chat_history.children) + [warning_widget]
                 self.history.append(("assistant", warning, "", "", ""))
-                db = lazy_import("nbchat.core.db")
                 db.log_message(self.session_id, "assistant", warning)
                 break
 
@@ -339,7 +329,7 @@ class ChatUI:
                 tool_name = tc["function"]["name"]
                 tool_args_str = tc["function"]["arguments"]
 
-                result = self._execute_tool(tool_name, tool_args_str)
+                result = executor.run_tool(tool_name, tool_args_str)
 
                 self.history.append(("tool", result, tool_id, tool_name, tool_args_str))
                 db.log_tool_msg(self.session_id, tool_id, tool_name, tool_args_str, result)
@@ -356,48 +346,48 @@ class ChatUI:
 
             # Do NOT call _render_history() here – UI updated incrementally
 
-    def _build_messages_for_api(self) -> List[Dict[str, Any]]:
-        messages = [{"role": "system", "content": self.system_prompt}]
-        for role, content, tool_id, tool_name, tool_args in self.history:
-            if role == "user":
-                messages.append({"role": "user", "content": content})
-            elif role == "assistant":
-                if tool_id:
-                    # Assistant row with a tool call (stored by log_tool_msg)
-                    # Construct a proper assistant message with tool_calls
-                    assistant_msg = {
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": [
-                            {
-                                "id": tool_id,
-                                "type": "function",
-                                "function": {"name": tool_name, "arguments": tool_args}
-                            }
-                        ]
-                    }
-                    messages.append(assistant_msg)
-                else:
-                    messages.append({"role": "assistant", "content": content})
-            elif role == "assistant_full":
-                try:
-                    full_msg = json.loads(tool_args)
-                    messages.append(full_msg)
-                except:
-                    messages.append({"role": "assistant", "content": content})
-            elif role == "tool":
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "content": content
-                })
-        return messages
+    # def _build_messages_for_api(self) -> List[Dict[str, Any]]:
+    #     messages = [{"role": "system", "content": self.system_prompt}]
+    #     for role, content, tool_id, tool_name, tool_args in self.history:
+    #         if role == "user":
+    #             messages.append({"role": "user", "content": content})
+    #         elif role == "assistant":
+    #             if tool_id:
+    #                 # Assistant row with a tool call (stored by log_tool_msg)
+    #                 # Construct a proper assistant message with tool_calls
+    #                 assistant_msg = {
+    #                     "role": "assistant",
+    #                     "content": content,
+    #                     "tool_calls": [
+    #                         {
+    #                             "id": tool_id,
+    #                             "type": "function",
+    #                             "function": {"name": tool_name, "arguments": tool_args}
+    #                         }
+    #                     ]
+    #                 }
+    #                 messages.append(assistant_msg)
+    #             else:
+    #                 messages.append({"role": "assistant", "content": content})
+    #         elif role == "assistant_full":
+    #             try:
+    #                 full_msg = json.loads(tool_args)
+    #                 messages.append(full_msg)
+    #             except:
+    #                 messages.append({"role": "assistant", "content": content})
+    #         elif role == "tool":
+    #             messages.append({
+    #                 "role": "tool",
+    #                 "tool_call_id": tool_id,
+    #                 "content": content
+    #             })
+    #     return messages
 
-    def _strip_reasoning_content(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        for msg in messages:
-            if msg.get("role") == "assistant" and "reasoning_content" in msg:
-                del msg["reasoning_content"]
-        return messages
+    # def _strip_reasoning_content(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    #     for msg in messages:
+    #         if msg.get("role") == "assistant" and "reasoning_content" in msg:
+    #             del msg["reasoning_content"]
+    #     return messages
 
     def _stream_assistant_response(self, client, tools, messages):
         reasoning_placeholder = None
@@ -424,20 +414,15 @@ class ChatUI:
             # Reasoning
             if hasattr(delta, "reasoning_content") and delta.reasoning_content:
                 if reasoning_placeholder is None:
-                    reasoning_placeholder = widgets.HTML(
-                        value=styles.reasoning_placeholder_html(),
-                        layout=widgets.Layout(width="100%", margin="0")
-                    )
+                    reasoning_placeholder = renderer.render_placeholder("reasoning")
                     self.chat_history.children = list(self.chat_history.children) + [reasoning_placeholder]
                 reasoning_accum += delta.reasoning_content
-                reasoning_placeholder.value = styles.reasoning_html_with_content(reasoning_accum)
+                reasoning_placeholder.value = renderer.render_reasoning(reasoning_accum).value
 
             # Assistant content
             if delta.content:
                 if assistant_placeholder is None:
-                    assistant_placeholder = widgets.HTML(
-                        value=styles.assistant_placeholder_html(),
-                        layout=widgets.Layout(width="100%", margin="0"))
+                    assistant_placeholder = renderer.render_placeholder("assistant")
                     # Insert after reasoning if it exists
                     children = list(self.chat_history.children)
                     if reasoning_placeholder is not None and reasoning_placeholder in children:
@@ -447,7 +432,7 @@ class ChatUI:
                         children.append(assistant_placeholder)
                     self.chat_history.children = children
                 content_accum += delta.content
-                assistant_placeholder.value = styles.assistant_html_with_content(content_accum)
+                assistant_placeholder.value = renderer.render_assistant(content_accum).value
 
             # Tool calls
             if delta.tool_calls:
@@ -468,26 +453,6 @@ class ChatUI:
         tool_calls = [tool_calls_buffer[i] for i in sorted(tool_calls_buffer.keys())] if tool_calls_buffer else None
         return reasoning_accum, content_accum, tool_calls, finish_reason
 
-    def _execute_tool(self, tool_name: str, args_json: str) -> str:
-        from nbchat.tools import TOOLS
-        try:
-            args = json.loads(args_json)
-            print(tool_name, args_json)
-        except Exception as e:
-            return f"❌ Failed to parse tool arguments: {e}"
-        func = next((t.func for t in TOOLS if t.name == tool_name), None)
-        if not func:
-            return f"⚠️ Unknown tool '{tool_name}'"
-        timeout = 60 if tool_name in ["browser", "run_tests"] else 30
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(func, **args)
-            try:
-                result = future.result(timeout=timeout)
-                return str(result)
-            except TimeoutError:
-                return f"⏰ Tool '{tool_name}' timed out after {timeout} seconds."
-            except Exception as e:
-                return f"❌ Tool execution error: {e}"
 
 
 # ----------------------------------------------------------------------
