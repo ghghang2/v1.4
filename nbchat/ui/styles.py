@@ -182,7 +182,14 @@ def reasoning_html(content: str, summary: str = "<b>Reasoning</b>", open: bool =
     details_open = "open" if open else ""
     # Place the content immediately after the summary tag.
     # Use flex layout to keep header and content on the same line.
-    inner = f"<details {details_open} style=\"margin:0; padding:0;\"><summary style=\"display:flex; align-items:top; margin:0;\">{summary} {raw_html}</summary></details>"
+    # The original implementation placed the rendered content inside the
+    # ``<summary>`` element and used ``display:flex`` which caused the
+    # summary and its content to appear side‑by‑side.  ``<summary>`` is
+    # meant to be a *heading* for the details, not a container for the
+    # full content.  We now place the content *after* the ``</summary>``
+    # tag so it expands on a new line.  The flex styles are removed to
+    # avoid horizontal layout.
+    inner = f"<details {details_open} style=\"margin:0; padding:0;\"><summary style=\"margin:0;\">{summary}</summary>{raw_html}</details>"
     return wrap_in_div(inner, reasoning_style_dict())
 
 def reasoning_placeholder_html() -> str:
@@ -201,7 +208,9 @@ def reasoning_html_with_content(content: str, open: bool = False) -> str:
     
     raw_html = re.sub(r'<p([^>]*)>', r'<p\1 style="margin:0;">', raw_html)
     details_open = "open" if open else ""
-    inner = f'''<details {details_open} style=\"margin:0; padding:0;\"><summary style=\"margin:0;\"><b>Reasoning</b> {raw_html}</summary></details>'''
+    # Same reasoning as in ``reasoning_html`` – the content should be
+    # outside the summary element.
+    inner = f'''<details {details_open} style=\"margin:0; padding:0;\"><summary style=\"margin:0;\"><b>Reasoning</b></summary>{raw_html}</details>'''
     return wrap_in_div(inner, reasoning_style_dict())
 
 def assistant_placeholder_html() -> str:

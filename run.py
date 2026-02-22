@@ -90,9 +90,8 @@ def main() -> None:
         sys.exit("[ERROR] GITHUB_TOKEN must be set")
 
     # ---  Ensure ports are free ----------------------------------------
-    for p in PORTS:
-        if not _is_port_free(p):
-            sys.exit(f"[ERROR] Port {p} is already in use")
+    if not _is_port_free(PORTS):
+        sys.exit(f"[ERROR] Port {PORTS} is already in use")
 
     # ---  Download the pre‑built llama‑server -------------------------
     _run(
