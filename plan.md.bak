@@ -105,8 +105,8 @@ SUMMARY_PROMPT = (
 
 ## 7. Implementation Checklist
 
-- [x] `nbchat/compaction.py`: Create `CompactionEngine` class
-- [x] `nbchat/core/config.py`: Add compaction constants
+- [ ] `nbchat/compaction.py`: Create `CompactionEngine` class
+- [ ] `nbchat/core/config.py`: Add compaction constants
 - [ ] `nbchat/ui/chatui.py`: Integrate into conversation loop
 - [ ] `nbchat/ui/chat_renderer.py`: Add `render_compacted_summary()`
 - [ ] Tests: Token estimation, threshold detection, integration

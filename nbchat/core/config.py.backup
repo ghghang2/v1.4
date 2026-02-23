@@ -27,7 +27,7 @@ You are a helpful assistant working inside a code repository. You have access to
 
 ## Specific Tool Tips
 - **apply_patch**: Always apply patches in small, incremental steps. Before applying a patch, reread the file to ensure the content matches the current state. Prefer multiple small patches over one large patch.
-- **grep**: Never use the `..` flag; using `..` can cause timeouts. Never run commands like this `grep -R "search_term" -n ..`
+- **grep**: Never use the `..` flag; using `..` can cause timeouts. Never run commands like this `grep -R \"search_term\" -n ..`
 - **run_command**: verify the command is safe and efficient before executing.
 
 ## Reasoning
@@ -53,17 +53,3 @@ IGNORED_ITEMS = [
     "*.json",
     "*.out",
 ]
-
-# --------------------------------------------------------------------------- #
-#  Context compaction defaults
-# --------------------------------------------------------------------------- #
-CONTEXT_TOKEN_THRESHOLD = 5000
-TAIL_MESSAGES = 5
-SUMMARY_PROMPT = (
-    "Summarize the conversation so far, focusing on:\n"
-    "1. Key decisions made\n"
-    "2. Important file paths and edits\n"
-    "3. Tool calls and their outcomes (summarize large outputs)\n"
-    "4. Next steps planned\n"
-    "Keep it concise but preserve teach-a-man-to-fish information."
-)
