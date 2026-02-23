@@ -214,21 +214,27 @@ class ChatUI:
             )
             return True
         return False
-    
+
     def _drain_compaction(self, messages):
-        """Call at the start of each turn to apply any pending compaction."""
+        """Apply any pending compaction result. Only updates data, never re-renders."""
         future = self.compaction_engine._pending
         if future is None:
             return
+        if not future.done():
+            return  # don't block — will drain on next turn
         try:
-            new_history = future.result(timeout=30)  # block here, but turn hasn't started yet
+            new_history = future.result()
             self.compaction_engine._pending = None
             db = lazy_import("nbchat.core.db")
             self.history = new_history
-            self._render_history()
             db.replace_session_history(self.session_id, new_history)
             messages.clear()
             messages.extend(chat_builder.build_messages(self.history, self.system_prompt))
+            # Append just the compaction notice widget, no full re-render
+            for role, content, _, _, _ in self.history:
+                if role == "compacted":
+                    self._append(renderer.render_compacted_summary(content))
+                    break
         except Exception as e:
             import sys
             print(f"Compaction failed: {e}", file=sys.stderr)
@@ -307,9 +313,10 @@ class ChatUI:
 
         for turn in range(self.MAX_TOOL_TURNS + 1):
             if self._stop_streaming:
-                # A new interjection has started; stop processing.
                 break
-            self._drain_compaction(messages) 
+
+            self._drain_compaction(messages)
+
             reasoning, content, tool_calls, finish_reason = self._stream_response(client, tools, messages)
 
             if reasoning:
@@ -346,7 +353,7 @@ class ChatUI:
                 db.log_tool_msg(self.session_id, tc["id"], tool_name, tool_args, result)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
                 compacted = self._maybe_compact(messages)
-                if not compacted: 
+                if not compacted:
                     self._append(renderer.render_tool(result, tool_name, tool_args))
 
     def _stream_response(self, client, tools, messages):
