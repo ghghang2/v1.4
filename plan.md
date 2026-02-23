@@ -1,10 +1,10 @@
-# Automatic Context Compaction Plan
+# Automatic Context Compaction Plan (Minimalist - Updated)
 
 ## 1. Overview
 
-Automatic Context Compaction is the process of reducing a chat conversation to a compact summary once the accumulated token usage reaches a configurable threshold.  The goal is to keep the conversation **within the model’s context window** while still preserving the information that is needed for the agent to continue its task.
+Automatic Context Compaction reduces chat conversation size when accumulated tokens exceed a threshold. The goal is to stay within the model's context window while preserving essential information for the agent to continue its task.
 
-This plan outlines a lightweight implementation that can be dropped into the existing `nbchat` repository without major refactors.
+This is a **minimalist, maintainable** implementation that prioritises performance and simplicity.
 
 ---
 
@@ -12,201 +12,312 @@ This plan outlines a lightweight implementation that can be dropped into the exi
 
 | Feature | Description | Why |
 |---------|-------------|-----|
-| **Token‑aware history** | Count tokens per turn and keep a running total. | Detect when we exceed the limit. |
-| **Trigger‑based compaction** | When the total exceeds `context_token_threshold`, start the compaction process. | No constant polling; only when necessary. |
-| **Summarization** | Ask Claude to produce a short summary of the conversation so far. | Keep only essential data. |
-| **History replacement** | Replace the entire message list with the summary message. | Reset token budget. |
-| **Non‑intrusive** | Use existing APIs (`chat_builder`, `chat_renderer`, `tool_executor`). | Minimal changes to core logic. |
-| **Extensible** | Allow custom summary prompts and optional summary model. | Future use‑cases. |
+| **Token counting** | Estimate tokens from llama-server logs (no tiktoken dependency). | Lightweight, accurate for our setup. |
+| **Threshold trigger** | Compact when total tokens exceed `CONTEXT_TOKEN_THRESHOLD`. | No constant polling. |
+| **Rolling tail + summary** | Keep last `TAIL_MESSAGES` verbatim, summarise older messages. | Maintain immediate context while compressing history. |
+| **Minimal integration** | Leverage existing `chat_builder`, `chat_renderer`, `tool_executor`. | Fewer changes, less risk. |
+| **Extensible** | Configurable threshold, tail length, summary prompt. | Adapt to different use cases. |
 
 ---
 
 ## 3. Architecture
 
 ```
-+-------------------+          +-----------------+          +-----------------+
-|  ChatUI (UI)     |   ⇄      |  ChatRunner     |   ⇄      |  OpenAI/Claude |
-+-------------------+          +-----------------+          +-----------------+
-        |                           |                          |
-        |   token_count, threshold   |                          |
-        |---------------------------|                          |
-        |                           |                          |
-        |   trigger_compaction()    |                          |
-        |---------------------------|                          |
-        |   build_summary_request() |                          |
-        |---------------------------|                          |
-        |   send_summary_to_model() |                          |
-        |---------------------------|                          |
-        |   replace_history()       |                          |
-        |---------------------------|                          |
++---------------------+       +-----------------------+       +-----------------+
+|    ChatUI (UI)     |       |  CompactionEngine    |       |   Assistant     |
++---------------------+       +-----------------------+       +-----------------+
+         |                              |                             |
+         |   token_count, threshold     |                             |
+         |------------------------------|                             |
+         |                              |                             |
+         |   should_compact?            |                             |
+         |------------------------------|                             |
+         |                              |                             |
+         |   compact_history()          |                             |
+         |------------------------------|                             |
+         |   [older messages]           |                             |
+         |------------------------------|                             |
+         |                              |   summary request           |
+         |                              |---------------------------->|
+         |                              |   summary response          |
+         |                              |<----------------------------|
+         |   new_history =              |                             |
+         |     summary + tail           |                             |
+         |<-----------------------------|                             |
 ```
 
-* **ChatRunner** – a thin wrapper around the existing logic in `ChatUI._process_conversation_turn`.  It will be extended to keep track of token usage and decide when to compact.
-* **CompactionEngine** – a new module containing the core logic (token counter, trigger, summary request, history replacement).
-* **Config** – add `context_token_threshold` and optional `summary_prompt` to `config.py`.
+* **CompactionEngine** – New module with token counting, threshold checking, and summarisation logic.
+* **TokenTracker** – Helper to parse llama-server logs for token counts and cache per-message estimates.
+* **Config** – Add `CONTEXT_TOKEN_THRESHOLD`, `TAIL_MESSAGES`, `SUMMARY_PROMPT` to `config.py`.
 
 ---
 
 ## 4. Key Components
 
-### 4.1 CompactionEngine
+### 4.1 TokenTracker (New Helper)
+
+```python
+# nbchat/compaction.py - TokenTracker class
+import re
+from pathlib import Path
+from typing import Dict, Optional
+
+class TokenTracker:
+    """Tracks token counts by parsing llama-server logs and caching per message."""
+    
+    def __init__(self):
+        self.message_tokens: Dict[int, int] = {}  # message index -> token count estimate
+        self.total_tokens = 0
+        
+    def estimate_tokens(self, text: str) -> int:
+        """Simple token estimation: ~4 chars per token."""
+        return max(1, len(text) // 4)
+    
+    def update_from_log(self, log_path: Path = Path("llama_server.log")):
+        """Parse llama-server log for recent token counts.
+        
+        Log lines contain: 'task.n_tokens = 55221' or 'n_tokens = 56063'
+        We track the most recent total to calibrate our estimates.
+        """
+        if not log_path.exists():
+            return
+        
+        with open(log_path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 10000))  # last 10KB
+            content = f.read().decode("utf-8", errors="ignore")
+            
+        # Find most recent token count from log
+        pattern = r'task\.n_tokens\s*=\s*(\d+)'
+        matches = re.findall(pattern, content)
+        if matches:
+            # Use average of recent counts for calibration
+            recent_counts = [int(m) for m in matches[-5:]]  # last 5
+            avg_actual = sum(recent_counts) / len(recent_counts)
+            # TODO: Compare with our estimate and adjust factor
+```
+
+### 4.2 CompactionEngine
 
 ```python
 # nbchat/compaction.py
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from nbchat.ui.chat_builder import build_messages
 from nbchat.core.client import get_client
 
 class CompactionEngine:
-    def __init__(self, threshold: int, summary_prompt: str | None = None, summary_model: str | None = None):
+    def __init__(self, threshold: int, tail_messages: int = 5, 
+                 summary_prompt: str = None, summary_model: str = None,
+                 system_prompt: str = ""):
         self.threshold = threshold
-        self.summary_prompt = summary_prompt or "Summarize the conversation so far."
+        self.tail_messages = tail_messages
+        self.summary_prompt = summary_prompt or (
+            "Summarize the conversation so far, focusing on: "
+            "1. Key decisions made\n"
+            "2. Important file paths and edits\n"
+            "3. Tool calls and their outcomes (summarize large outputs)\n"
+            "4. Next steps planned\n"
+            "Keep it concise but preserve teach-a-man-to-fish information."
+        )
         self.summary_model = summary_model
-        self.input_tokens = 0
-
-    def update_token_count(self, message: dict, usage: dict):
-        """Add the input token count for a single assistant response.
-        The caller passes the raw message dict and the usage dict from the API.
+        self.system_prompt = system_prompt
+        self.token_tracker = TokenTracker()
+        
+    def total_tokens(self, history: List[Tuple[str, str, str, str, str]]) -> int:
+        """Calculate total tokens in history using cached estimates."""
+        total = 0
+        for i, (role, content, tool_id, tool_name, tool_args) in enumerate(history):
+            if i in self.token_tracker.message_tokens:
+                total += self.token_tracker.message_tokens[i]
+            else:
+                # Estimate and cache
+                msg_tokens = self.token_tracker.estimate_tokens(content)
+                if tool_args:
+                    msg_tokens += self.token_tracker.estimate_tokens(tool_args)
+                self.token_tracker.message_tokens[i] = msg_tokens
+                total += msg_tokens
+        return total
+    
+    def should_compact(self, history: List[Tuple[str, str, str, str, str]]) -> bool:
+        """Check if history exceeds token threshold."""
+        return self.total_tokens(history) >= self.threshold
+    
+    def compact_history(self, history: List[Tuple[str, str, str, str, str]]) -> List[Tuple[str, str, str, str, str]]:
+        """Summarise older messages, keep recent tail.
+        
+        Returns new history or raises exception on failure.
         """
-        self.input_tokens += usage.get("input_tokens", 0)
-
-    def should_compact(self) -> bool:
-        return self.input_tokens >= self.threshold
-
-    def create_summary_request(self, history: List[Tuple[str, str, str, str, str]]) -> dict:
-        """Return a user message that asks the model to summarize the current history.
-        The summary will be wrapped in `<summary></summary>` tags.
-        """
-        summary_msg = f"{self.summary_prompt}"
-        return {"role": "user", "content": summary_msg}
-
-    def replace_history(self, messages: List[dict]) -> List[dict]:
-        """Replace all but the last user message with the summary.
-        The summary message is expected to be the last element in *messages*.
-        """
-        summary = messages[-1]
-        return [summary]
+        if len(history) <= self.tail_messages:
+            return history  # Not enough to compact
+        
+        older = history[:-self.tail_messages]
+        tail = history[-self.tail_messages:]
+        
+        # Build messages for summarisation with original system prompt
+        messages = build_messages(older, self.system_prompt)
+        messages.append({"role": "user", "content": self.summary_prompt})
+        
+        # Request summary - must succeed or raise
+        client = get_client()
+        try:
+            response = client.chat.completions.create(
+                model=self.summary_model or "gpt-4",
+                messages=messages,
+                max_tokens=512,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Summarization failed: {e}")
+        
+        summary_text = response.choices[0].message.content
+        
+        # New history: summary (as system message) + tail
+        # Use role "system" for API compatibility
+        return [("system", summary_text, "", "", "")] + tail
 ```
 
-### 4.2 Integration with ChatUI
+### 4.3 Integration with ChatUI
 
-In `ChatUI._process_conversation_turn`, after each assistant turn we:
-
-1. Call `compaction_engine.update_token_count(msg, usage)`.
-2. If `compaction_engine.should_compact()`:
-   * Build a summary request: `summary_msg = compaction_engine.create_summary_request(self.history)`.
-   * Send it to the model **without** the rest of the history.
-   * Receive the summary response and store it as a single message.
-   * Replace the current history with `[summary_msg]` via `compaction_engine.replace_history(messages)`.
-   * Reset `compaction_engine.input_tokens` to 0.
-
-**Code Snippet** (inside `_process_conversation_turn` loop):
+In `ChatUI._process_conversation_turn`, after each assistant response:
 
 ```python
-# After receiving an assistant response
-if self.compaction_engine.should_compact():
-    # 1. Build summary request
-    summary_msg = self.compaction_engine.create_summary_request(self.history)
-    # 2. Send request (no history)
-    summary_resp = client.chat.completions.create(
-        model=self.compaction_engine.summary_model or self.model_name,
-        messages=[summary_msg],
-        max_tokens=512,
-    )
-    # 3. Store summary
-    summary_text = summary_resp.choices[0].message.content
-    self.history = [("assistant", summary_text, "", "", "")]
-    # 4. Reset counter
-    self.compaction_engine.input_tokens = 0
+# After receiving assistant response
+if self.compaction_engine.should_compact(self.history):
+    try:
+        new_history = self.compaction_engine.compact_history(self.history)
+        with self._history_lock:
+            # Update history and UI
+            self.history = new_history
+            
+            # Delete old messages from database
+            db = lazy_import("nbchat.core.db")
+            # We'll need a function to delete messages for a session
+            # db.delete_messages_except(self.session_id, new_history)
+            
+            self._render_history()  # Update UI
+    except Exception as e:
+        # Log error but continue conversation without compaction
+        print(f"Compaction failed: {e}")
 ```
 
-### 4.3 Configuration
+### 4.4 Configuration
 
 Add to `nbchat/core/config.py`:
 
 ```python
 # Context compaction defaults
 CONTEXT_TOKEN_THRESHOLD = 5000
+TAIL_MESSAGES = 5
 SUMMARY_PROMPT = (
-    "Please summarize the conversation so far in a concise format, "
-    "including processed tickets, categories, priorities, and next steps."
+    "Summarize the conversation so far, focusing on:\n"
+    "1. Key decisions made\n"
+    "2. Important file paths and edits\n"
+    "3. Tool calls and their outcomes (summarize large outputs)\n"
+    "4. Next steps planned\n"
+    "Keep it concise but preserve teach-a-man-to-fish information."
 )
-SUMMARY_MODEL = "claude-haiku-4-5"  # optional, defaults to current model
 ```
 
-Expose these in `ChatUI` initialization:
+Update `ChatUI.__init__`:
 
 ```python
 from nbchat.core.config import (
-    CONTEXT_TOKEN_THRESHOLD,
+    CONTEXT_TOKEN_THRESHOLD, 
+    TAIL_MESSAGES, 
     SUMMARY_PROMPT,
-    SUMMARY_MODEL,
+    MODEL_NAME,
+    DEFAULT_SYSTEM_PROMPT
 )
 self.compaction_engine = CompactionEngine(
     threshold=CONTEXT_TOKEN_THRESHOLD,
+    tail_messages=TAIL_MESSAGES,
     summary_prompt=SUMMARY_PROMPT,
-    summary_model=SUMMARY_MODEL,
+    summary_model=MODEL_NAME,
+    system_prompt=DEFAULT_SYSTEM_PROMPT,
 )
 ```
+
+### 4.5 UI and Database Updates
+
+* **chat_renderer.py**: Add `render_system_summary()` for compacted summary messages.
+* **chat_builder.py**: "system" role messages already handled.
+* **db.py**: Add `delete_messages_except(session_id, keep_indices)` to remove old messages after compaction.
 
 ---
 
 ## 5. Token Counting Strategy
 
-* We use the `usage` object returned by the OpenAI/Claude SDK for each response.
-* `usage.input_tokens` represents the number of tokens sent *in that single request*, **including** the entire conversation history that was sent.
-* Since we only care about the *total* tokens sent so far, we simply accumulate `usage.input_tokens` after each assistant turn.
-* Reset the counter after a compaction.
+Use **llama-server log parsing** + **cached estimates**:
+- Parse `llama_server.log` for `task.n_tokens = X` to get actual token counts
+- Cache token estimates per message (simple char/4 heuristic)
+- Calibrate heuristic against actual log values periodically
+- Avoid tiktoken dependency
 
-If the SDK exposes `usage.output_tokens`, we ignore it for compaction purposes because output tokens do not contribute to the next request’s cost.
-
----
-
-## 6. Summary Generation
-
-* The summary prompt is simple; it can be overridden by the user.
-* The model should wrap the summary in `<summary></summary>` tags.  The UI can strip these tags before displaying.
-* We set a relatively small `max_tokens` (e.g., 512) to keep the summary concise.
+**Performance**: Cached estimates make `total_tokens()` O(1) for unchanged history.
 
 ---
 
-## 7. History Replacement
+## 6. History Management
 
-* The conversation history is represented in `ChatUI.history` as a list of tuples `(role, content, tool_id, tool_name, tool_args)`.
-* After compaction we replace the entire list with a single entry: `("assistant", summary_text, "", "", "")`.
-* Subsequent turns will build on this single message.
-* The `chat_builder.build_messages` function will naturally handle this history format.
+After compaction:
+1. Older messages → single system message with summary
+2. Last `TAIL_MESSAGES` messages kept verbatim
+3. Old messages deleted from database
+4. Summary appears before tail in history
+
+**Example**: 10 messages, TAIL_MESSAGES=5
+- Messages 1-5 → summarised into system message
+- Messages 6-10 → kept verbatim
+- Database: Delete rows for messages 1-5
+- Result: [system_summary, msg6, msg7, msg8, msg9, msg10]
 
 ---
 
-## 8. Testing Strategy
+## 7. Testing Strategy
 
 | Test | Description |
 |------|-------------|
-| `test_compaction_engine` | Instantiate engine with low threshold, feed tokens, verify `should_compact()` toggles correctly. |
-| `test_summary_request` | Mock the client to return a pre‑defined summary; ensure history is replaced. |
-| `test_integration` | Run a short ticket‑processing flow with `context_token_threshold=200` to trigger compaction early; verify the final history contains a summary message. |
-| `test_no_compaction` | Set threshold very high; ensure no compaction occurs. |
+| `test_token_tracker` | Verify log parsing and estimation calibration. |
+| `test_should_compact` | Test threshold detection with various histories. |
+| `test_compact_history` | Mock API call, verify summary + tail structure. |
+| `test_db_cleanup` | Verify old messages deleted, summary stored. |
+| `test_integration` | End-to-end with low threshold, ensure UI updates. |
+| `test_failure_handling` | Simulate API failure, ensure conversation continues. |
 
-Use `pytest` and `unittest.mock` to patch the client.
-
----
-
-## 9. Deployment Notes
-
-* No changes to the server side or external services are required.
-* The compaction logic runs entirely on the client side, using the same OpenAI/Claude API that the rest of the chat uses.
-* The UI will show a short *“Compaction occurred”* message or similar indicator for debugging.
+Use `pytest` with mocked API client and in-memory database.
 
 ---
 
-## 10. Future Enhancements
+## 8. Deployment Notes
 
-1. **Server‑side compaction** – move the logic into the LLM server to avoid an extra round‑trip.
-2. **Dynamic threshold** – adjust threshold based on current model context size.
-3. **Custom summarization models** – allow a cheaper model for the summary step.
-4. **Persist summaries** – store the summary in the DB for audit trails.
+* No new dependencies (no tiktoken)
+* Backward compatible: compaction disabled without configuration
+* Summary messages appear as system messages in UI (distinct styling)
+* Database cleanup prevents bloat
+* Thread-safe: uses existing `_history_lock`
 
 ---
 
-*End of plan.*
+## 9. Future Enhancements (Optional)
+
+1. **Incremental compaction**: Summarise long tool outputs immediately.
+2. **Dynamic thresholds**: Adjust based on model context window.
+3. **Cheaper summary model**: Use smaller/cheaper model for summarisation.
+4. **Case file extraction**: Extract key file paths, decisions to separate structure.
+
+---
+
+## 10. Implementation Checklist
+
+- [ ] Create `TokenTracker` class with log parsing
+- [ ] Create `CompactionEngine` class
+- [ ] Add configuration to `config.py`
+- [ ] Integrate into `ChatUI._process_conversation_turn`
+- [ ] Add `delete_messages_except()` to `db.py`
+- [ ] Add `render_system_summary()` to `chat_renderer.py`
+- [ ] Update UI styling for summary messages
+- [ ] Write comprehensive tests
+- [ ] Document new configuration options
+
+---
+
+*End of updated minimalist plan.*

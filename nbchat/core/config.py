@@ -7,10 +7,10 @@ from nbchat.tools.repo_overview import func
 #  General settings
 # --------------------------------------------------------------------------- #
 # Base URL of the local llama-server.  Historically this was called NGROK_URL
-SERVER_URL = "http://localhost:8000"
-MODEL_NAME = "unsloth/gpt-oss-20b-GGUF:F16"
-# SERVER_URL = "https://api.deepseek.com"
-# MODEL_NAME = "deepseek-reasoner"
+# SERVER_URL = "http://localhost:8000"
+# MODEL_NAME = "unsloth/gpt-oss-20b-GGUF:F16"
+SERVER_URL = "https://api.deepseek.com"
+MODEL_NAME = "deepseek-reasoner"
 DEFAULT_SYSTEM_PROMPT = f'''
 You are a helpful assistant working inside a code repository. You have access to tools that let you examine and modify files, run commands, browse the web, check the weather, run tests, and more. Never delete a file before making a backup version of it first. This way you can revert using the backup version in case anything breaks. Never use the `..` flag when using grep.
 
