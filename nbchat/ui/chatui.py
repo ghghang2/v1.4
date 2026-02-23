@@ -334,10 +334,10 @@ class ChatUI:
                 tool_args = tc["function"]["arguments"]
                 result = executor.run_tool(tool_name, tool_args)
                 self.history.append(("tool", result, tc["id"], tool_name, tool_args))
-                self._maybe_compact(messages)
                 db.log_tool_msg(self.session_id, tc["id"], tool_name, tool_args, result)
-                self._append(renderer.render_tool(result, tool_name, tool_args))
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                self._maybe_compact(messages)
+                self._render_history()
 
     def _stream_response(self, client, tools, messages):
         reasoning_widget = None

@@ -65,5 +65,5 @@ SUMMARY_PROMPT = (
     "2. Important file paths and edits\n"
     "3. Tool calls and their outcomes (summarize large outputs)\n"
     "4. Next steps planned\n"
-    "Keep it concise but preserve teach-a-man-to-fish information."
+    "Keep it concise but preserve key information. Ensure you can pick up the conversation in the future without missing key information."
 )
