@@ -29,10 +29,10 @@ LLAMA_LOG     = Path("llama_server.log")
 REPO          = "ghghang2/llamacpp_t4_v1"
 # Q4_K_M (~12 GB) fits entirely in T4 VRAM — no CPU offload, maximum TPS.
 # Switch to Q8_0 (~21 GB) only if output quality is insufficient (will require partial CPU offload).
-MODEL         = "unsloth/gpt-oss-20b-GGUF:Q5_K_M"
+MODEL         = "unsloth/gpt-oss-20b-GGUF:F16"
 PORT          = 8000
-N_PARALLEL    = 2      # matches 1-2 simultaneous users; fewer slots = faster per-request TPS
-CTX_SIZE      = 49152  # tokens per slot; total KV mem ≈ CTX_SIZE * N_PARALLEL * layers. 32K fits within T4 headroom at Q4_K_M + N_PARALLEL=2
+N_PARALLEL    = 1      # matches 1-2 simultaneous users; fewer slots = faster per-request TPS
+CTX_SIZE      = 16384  # tokens per slot; total KV mem ≈ CTX_SIZE * N_PARALLEL * layers. 32K fits within T4 headroom at Q4_K_M + N_PARALLEL=2
 N_GPU_LAYERS  = 999    # offload all layers to GPU (llama.cpp clamps to actual layer count)
 
 
@@ -120,6 +120,8 @@ def main() -> None:
                 "--parallel",     str(N_PARALLEL),
                 "--ctx-size",     str(CTX_SIZE),
                 "--n-gpu-layers", str(N_GPU_LAYERS),
+                "--flash-attn", "1",
+                "--mlock",
                 "--metrics",
             ],
             stdin=devnull,
