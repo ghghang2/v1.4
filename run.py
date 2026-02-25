@@ -32,7 +32,7 @@ REPO          = "ghghang2/llamacpp_t4_v1"
 MODEL         = "unsloth/gpt-oss-20b-GGUF:F16"
 PORT          = 8000
 N_PARALLEL    = 1      # matches 1-2 simultaneous users; fewer slots = faster per-request TPS
-CTX_SIZE      = 16384  # tokens per slot; total KV mem ≈ CTX_SIZE * N_PARALLEL * layers. 32K fits within T4 headroom at Q4_K_M + N_PARALLEL=2
+CTX_SIZE      = 40000  # tokens per slot; total KV mem ≈ CTX_SIZE * N_PARALLEL * layers. 32K fits within T4 headroom at Q4_K_M + N_PARALLEL=2
 N_GPU_LAYERS  = 999    # offload all layers to GPU (llama.cpp clamps to actual layer count)
 
 
