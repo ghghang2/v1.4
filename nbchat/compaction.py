@@ -154,7 +154,7 @@ class CompactionEngine:
 
             # Never split here if the current message is a tool result or
             # analysis — it must stay with its preceding assistant call.
-            if role in ("tool", "analysis"):
+            if role in ("tool", "analysis", "assistant_full"):
                 tail_start -= 1
                 continue
 
@@ -181,14 +181,6 @@ class CompactionEngine:
             print("[compaction] no user-message boundary found, skipping", file=sys.stderr)
             return history
 
-        # # Guard: older must be at least 2 rows so there is something to summarise.
-        # if tail_start < 2:
-        #     print(
-        #         f"[compaction] older slice too small ({tail_start} rows), skipping",
-        #         file=sys.stderr,
-        #     )
-        #     return history
-
         older = history[:tail_start]
         tail = history[tail_start:]
 
@@ -205,6 +197,12 @@ class CompactionEngine:
         # cause errors or be silently dropped by most inference servers.
         for msg in messages:
             msg.pop("reasoning_content", None)
+        
+        # Strip tool_calls from the last assistant message if present
+        if messages and messages[-1].get("role") == "assistant":
+            messages[-1].pop("tool_calls", None)
+            if not messages[-1].get("content"):
+                messages.pop()
 
         # Append the summarisation instruction as a user turn.
         messages.append({"role": "user", "content": "we are running out of context window"})
