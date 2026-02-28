@@ -151,7 +151,13 @@ class CompactionEngine:
         while tail_start > 0:
             role = history[tail_start][0]
             prev_role = history[tail_start - 1][0]
-            
+
+            # Never split here if the current message is a tool result or
+            # analysis — it must stay with its preceding assistant call.
+            if role in ("tool", "analysis"):
+                tail_start -= 1
+                continue
+
             # Safe points to start the 'tail':
             # 1. A User message (The gold standard)
             # 2. An Assistant message, provided the previous message wasn't 
