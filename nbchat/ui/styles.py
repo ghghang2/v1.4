@@ -80,9 +80,6 @@ def user_message_html(content: str, prefix: str = "<b>User</b> ") -> str:
 def assistant_message_html(content: str, prefix: str = "<b>Assistant</b> ") -> str:
     return _div(prefix + _md(content, inline=True), BACKGROUND_ASSISTANT)
 
-# def assistant_placeholder_html() -> str:
-#     return _div("<b>Assistant:</b> ", BACKGROUND_ASSISTANT)
-
 def reasoning_html(content: str, summary: str = "<b>Reasoning</b>", open: bool = False) -> str:
     tag = "open" if open else ""
     inner = (
@@ -91,14 +88,6 @@ def reasoning_html(content: str, summary: str = "<b>Reasoning</b>", open: bool =
         f'<div>{_md(content)}</div></details>'
     )
     return _div(inner, BACKGROUND_LIGHT)
-
-# def reasoning_placeholder_html() -> str:
-#     inner = (
-#         '<details style="margin:0;padding:0;">'
-#         '<summary style="margin:0;display:block;"><b>Reasoning</b></summary>'
-#         '</details>'
-#     )
-#     return _div(inner, BACKGROUND_LIGHT)
 
 def assistant_full_html(reasoning: str, content: str, tool_calls: List[Dict[str, Any]]) -> str:
     parts = []
@@ -152,6 +141,15 @@ def compacted_summary_html(content: str) -> str:
         f'<div>{_md(content)}</div></details>'
     )
     return _div(inner, BACKGROUND_LIGHT)
-    
+
 def make_widget(html_str: str) -> widgets.HTML:
-    return widgets.HTML(value=html_str, layout=widgets.Layout(width="100%", margin="0"))
+    """Return an :class:`ipywidgets.HTML` widget.
+
+    The original code defined this function inside
+    ``compacted_summary_html`` due to a stray indentation.  That made the
+    module fail to import.  The function is now defined at module level.
+    """
+    return widgets.HTML(
+        value=html_str,
+        layout=widgets.Layout(width="100%", margin="0"),
+    )
