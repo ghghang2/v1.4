@@ -1,19 +1,23 @@
 # RLVR Recent Papers Summary
 
-| # | Concept | Key Idea | Papers |
-|---|---------|----------|--------|
-| 1 | Entropy Calibration | Treat uncertainty, not just binary correctness | 2602.22751 |
-| 2 | Context‑Augmented RL | Full reference solutions as context; multi‑turn sampling | 2602.22623 |
-| 3 | Mutual‑Info Skill Learning | Token‑level MI reward in GRPO to boost pass@k | 2602.22296 |
-| 4 | Action‑Aware SFT + KL | For GUI agents: action‑aware SFT, KL trust‑region, adaptive scaling | 2602.22190 |
-| 5 | Difficulty‑Aware Normalization | Group roll‑outs by difficulty; share std within groups | 2602.21743 |
-| 6 | Rubric‑Based Curriculum | Stratified rubrics, learn from easier to harder | 2602.21628 |
-| 7 | Asymmetric Confidence Penalty | Modulate negative advantage with confidence shift | 2602.21420 |
+## Overview
+Recent RLVR work has focused on addressing uncertainty calibration, reward hacking, diversity, and multimodal robustness. Common themes include: explicit modeling of uncertainty or confidence, structured supervision (context, rubrics, action-aware SFT), and curriculum/normalization strategies that mitigate extreme samples. Below we provide detailed summaries for each paper.
 
-## Themes
-* **Uncertainty & Calibration** – EGPO, MI‑learning.
-* **Rich Verification** – ContextRL, RuCL.
-* **Explore & Avoid Over‑confidence** – ACE, MI reward.
-* **Multimodal & GUI** – Durian, GUI‑Libra.
+| ID | Title | Key Contributions | Key Results |
+|----|-------|-------------------|-------------|
+| 2602.22751 | Know What You Know: Metacognitive Entropy Calibration for Verifiable RL Reasoning | - Introduces EGPO, a metacognitive entropy calibration framework. <br> - Estimates intrinsic uncertainty via token-level likelihood proxy. <br> - Aligns uncertainty with correctness using asymmetric calibration, preserving correct reasoning while regulating overconfident failures. | - Improves pass@k across multiple reasoning benchmarks (e.g., GSM8K, MATH). <br> - Recovers learning signals from degenerate group-based rollouts without altering verifier. |
+| 2602.22623 | ContextRL: Enhancing MLLM's Knowledge Discovery Efficiency with Context-Augmented RL | - Provides full reference solutions as context to reward model, improving identifiability. <br> - Multi‑turn sampling with mistake reports to enhance reachability. <br> - Introduces contextual data to filter false positives and mitigate reward hacking. | - 11 perception & reasoning benchmarks: Qwen3‑VL‑8B matches 32B performance; significant gains over standard RLVR. |
+| 2602.22296 | UpSkill: Mutual Information Skill Learning for Structured Response Diversity in LLMs | - Adapts Mutual Information Skill Learning (MISL) to LLMs, introducing token‑level MI reward within GRPO. <br> - Encourages trajectory specificity to avoid collapsing diversity. <br> - Demonstrates theoretical link between MI objective and pass@k. | - ~3% mean gain in pass@k for Qwen and Llama on GSM8K; no loss in pass@1. |
+| 2602.22190 | GUI‑Libra: Training Native GUI Agents to Reason and Act with Action‑aware Supervision and Partially Verifiable RL | - Curates an 81K action‑aligned GUI reasoning dataset. <br> - Action‑aware SFT mixes reasoning‑then‑action and direct‑action data, reweights tokens for grounding. <br> - Introduces KL regularization + success‑adaptive scaling to address partial verifiability. | - Consistent step‑wise and end‑to‑end improvements across web/mobile benchmarks; unlocks stronger task‑solving without costly online data collection. |
+| 2602.21743 | Enhancing Multi‑Modal LLMs Reasoning via Difficulty‑Aware Group Normalization | - Characterizes samples by perceptual complexity + reasoning uncertainty. <br> - Proposes Durian: re‑group samples by difficulty and share std within groups to mitigate extreme‑sample distortion. | - Significant gains across multimodal reasoning benchmarks; stabilizes GRPO training for multimodal settings. |
+| 2602.21628 | RuCL: Stratified Rubric‑Based Curriculum Learning for Multimodal LLM Reasoning | - Generates generalized rubrics and stratifies them based on model competence. <br> - Dynamically adjusts rubric weights to guide learning from perception to advanced logic. | - +7.83% average improvement over Qwen2.5‑VL‑7B; achieves 60.06% accuracy on visual reasoning benchmarks. |
+| 2602.21420 | Overconfident Errors Need Stronger Correction: Asymmetric Confidence Penalties for Reinforcement Learning | - Introduces per‑rollout confidence shift metric to modulate negative advantages. <br> - Provides theoretical decomposition of gradient into selective regularizer for overconfident errors. | - Consistently improves Pass@k across Qwen2.5‑Math‑7B, Qwen3‑8B‑Base, Llama‑3.1‑8B‑Instruct on MATH‑500 and AIME 2025. |
 
-All works extend RLVR + GRPO by adding calibration/regularization layers to improve sample efficiency, reduce reward hacking, and broaden applicability.
+## Common Themes & Research Directions
+1. **Uncertainty / Confidence Modeling** – EGPO, ACE, Durian, and UpSkill all explicitly model uncertainty or confidence, either for calibration, regularization, or diversity promotion.
+2. **Structured Supervision & Contextual Signals** – ContextRL, GUI‑Libra, RuCL leverage richer supervision (full reference solutions, action‑aligned data, or stratified rubrics) to guide the reward model and mitigate reward hacking.
+3. **Curriculum & Normalization Strategies** – Durian (difficulty‑aware normalization) and RuCL (rubric‑based curriculum) illustrate that re‑weighting or re‑grouping samples can stabilize training and accelerate learning.
+4. **Multi‑Modal & GUI Extensions** – GUI‑Libra and Durian extend RLVR to visual and GUI tasks, highlighting challenges of grounding and partial verifiability.
+5. **Balancing Exploration & Exploitation** – UpSkill and ACE address the trade‑off between narrowing the reasoning boundary and preserving diversity, thereby improving pass@k without harming pass@1.
+
+These works collectively push RLVR beyond simple binary correctness, offering principled ways to calibrate, diversify, and supervise large reasoning models, and set clear directions for future research in uncertainty‑aware RLVR, curriculum design, and multimodal reasoning. 
