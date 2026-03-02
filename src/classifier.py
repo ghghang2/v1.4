@@ -63,4 +63,3 @@ if __name__ == "__main__":
     ]
     for u in test:
         print(u, "->", classify_url(u))
-"""

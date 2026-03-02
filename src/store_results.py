@@ -105,4 +105,3 @@ if __name__ == "__main__":
     harvested = {"paper": [], "patent": [], "repo": [], "blog": []}
     print("Saving results...")
     print(save_query_results(sample_query, raw, harvested))
-"""
