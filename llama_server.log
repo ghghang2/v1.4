@@ -3,7 +3,8 @@ ggml_cuda_init: found 1 CUDA devices:
 common_download_file_single_online: no previous model file found /root/.cache/llama.cpp/unsloth_gpt-oss-20b-GGUF_preset.ini
 common_download_file_single_online: HEAD invalid http status code received: 404
 no remote preset found, skipping
-common_download_file_single_online: using cached file: /root/.cache/llama.cpp/unsloth_gpt-oss-20b-GGUF_gpt-oss-20b-F16.gguf
+common_download_file_single_online: no previous model file found /root/.cache/llama.cpp/unsloth_gpt-oss-20b-GGUF_gpt-oss-20b-F16.gguf
+common_download_file_single_online: trying to download model from https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-F16.gguf to /root/.cache/llama.cpp/unsloth_gpt-oss-20b-GGUF_gpt-oss-20b-F16.gguf.downloadInProgress (etag:"78f73a4ef91c8f92d4df971f570ff3719007201f6d955b8695384a1b21b04a80")...
 build: 7772 (287a33017) with GNU 11.4.0 for Linux x86_64
 system info: n_threads = 1, n_threads_batch = 1, total_threads = 2
 
@@ -16,13 +17,13 @@ main: loading model
 srv    load_model: loading model '/root/.cache/llama.cpp/unsloth_gpt-oss-20b-GGUF_gpt-oss-20b-F16.gguf'
 common_init_result: fitting params to device memory, for bugs during this step try to reproduce them with -fit off, or provide --verbose logs if the bug only occurs with -fit on
 srv  log_server_r: request: GET /health 127.0.0.1 503
-llama_params_fit_impl: projected to use 14452 MiB of device memory vs. 14807 MiB of free device memory
-llama_params_fit_impl: cannot meet free memory target of 1024 MiB, need to reduce device memory by 668 MiB
-llama_params_fit_impl: context size set by user to 32768 -> no change
+llama_params_fit_impl: projected to use 14068 MiB of device memory vs. 14807 MiB of free device memory
+llama_params_fit_impl: cannot meet free memory target of 1024 MiB, need to reduce device memory by 284 MiB
+llama_params_fit_impl: context size set by user to 16384 -> no change
 llama_params_fit: failed to fit params to free device memory: n_gpu_layers already set by user to 999, abort
-llama_params_fit: fitting params to free memory took 1.05 seconds
-srv  log_server_r: request: GET /health 127.0.0.1 503
+llama_params_fit: fitting params to free memory took 1.01 seconds
 llama_model_load_from_file_impl: using device CUDA0 (Tesla T4) (0000:00:04.0) - 14807 MiB free
+srv  log_server_r: request: GET /health 127.0.0.1 503
 llama_model_loader: direct I/O is enabled, disabling mmap
 llama_model_loader: loaded meta data with 37 key-value pairs and 459 tensors from /root/.cache/llama.cpp/unsloth_gpt-oss-20b-GGUF_gpt-oss-20b-F16.gguf (version GGUF V3 (latest))
 llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
@@ -146,23 +147,19 @@ load_tensors: offloading 23 repeating layers to GPU
 load_tensors: offloaded 25/25 layers to GPU
 load_tensors:        CUDA0 model buffer size = 12036.68 MiB
 load_tensors:    CUDA_Host model buffer size =  1104.61 MiB
-srv  log_server_r: request: GET /health 127.0.0.1 503
-srv  log_server_r: request: GET /health 127.0.0.1 503
-srv  log_server_r: request: GET /health 127.0.0.1 503
-srv  log_server_r: request: GET /health 127.0.0.1 503
-srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+...srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
+...srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
+.srv  log_server_r: request: GET /health 127.0.0.1 503
+....srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
@@ -171,36 +168,29 @@ srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
 ...srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ...srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+.srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
+..srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ...srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
 .srv  log_server_r: request: GET /health 127.0.0.1 503
 ..srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-...srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
-..srv  log_server_r: request: GET /health 127.0.0.1 503
-.srv  log_server_r: request: GET /health 127.0.0.1 503
 srv  log_server_r: request: GET /health 127.0.0.1 503
 srv  log_server_r: request: GET /health 127.0.0.1 503
 srv  log_server_r: request: GET /health 127.0.0.1 503
@@ -211,8 +201,8 @@ common_init_result: added <|return|> logit bias = -inf
 common_init_result: added <|call|> logit bias = -inf
 llama_context: constructing llama_context
 llama_context: n_seq_max     = 1
-llama_context: n_ctx         = 32768
-llama_context: n_ctx_seq     = 32768
+llama_context: n_ctx         = 16384
+llama_context: n_ctx_seq     = 16384
 llama_context: n_batch       = 4096
 llama_context: n_ubatch      = 2048
 llama_context: causal_attn   = 1
@@ -220,24 +210,24 @@ llama_context: flash_attn    = enabled
 llama_context: kv_unified    = false
 llama_context: freq_base     = 150000.0
 llama_context: freq_scale    = 0.03125
-llama_context: n_ctx_seq (32768) < n_ctx_train (131072) -- the full capacity of the model will not be utilized
+llama_context: n_ctx_seq (16384) < n_ctx_train (131072) -- the full capacity of the model will not be utilized
 llama_context:  CUDA_Host  output buffer size =     0.77 MiB
-llama_kv_cache_iswa: creating non-SWA KV cache, size = 32768 cells
-llama_kv_cache:      CUDA0 KV buffer size =   768.00 MiB
-llama_kv_cache: size =  768.00 MiB ( 32768 cells,  12 layers,  1/1 seqs), K (f16):  384.00 MiB, V (f16):  384.00 MiB
+llama_kv_cache_iswa: creating non-SWA KV cache, size = 16384 cells
+llama_kv_cache:      CUDA0 KV buffer size =   384.00 MiB
+llama_kv_cache: size =  384.00 MiB ( 16384 cells,  12 layers,  1/1 seqs), K (f16):  192.00 MiB, V (f16):  192.00 MiB
 llama_kv_cache_iswa: creating     SWA KV cache, size = 2304 cells
 llama_kv_cache:      CUDA0 KV buffer size =    54.00 MiB
 llama_kv_cache: size =   54.00 MiB (  2304 cells,  12 layers,  1/1 seqs), K (f16):   27.00 MiB, V (f16):   27.00 MiB
 sched_reserve: reserving ...
 sched_reserve:      CUDA0 compute buffer size =  1593.50 MiB
-sched_reserve:  CUDA_Host compute buffer size =   296.59 MiB
+sched_reserve:  CUDA_Host compute buffer size =   168.59 MiB
 sched_reserve: graph nodes  = 1352
 sched_reserve: graph splits = 2
-sched_reserve: reserve took 195.18 ms, sched copies = 1
+sched_reserve: reserve took 144.75 ms, sched copies = 1
 common_init_from_params: warming up the model with an empty run - please wait ... (--no-warmup to disable)
 srv  log_server_r: request: GET /health 127.0.0.1 503
 srv    load_model: initializing slots, n_slots = 1
-slot   load_model: id  0 | task -1 | new slot, n_ctx = 32768
+slot   load_model: id  0 | task -1 | new slot, n_ctx = 16384
 srv    load_model: prompt cache is enabled, size limit: 8192 MiB
 srv    load_model: use `--cache-ram 0` to disable the prompt cache
 srv    load_model: for more info see https://github.com/ggml-org/llama.cpp/pull/16391
@@ -260,18 +250,18 @@ srv  params_from_: Chat format: GPT-OSS
 slot get_availabl: id  0 | task -1 | selected slot by LRU, t_last = -1
 slot launch_slot_: id  0 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> temp-ext -> dist 
 slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
-slot update_slots: id  0 | task 0 | new prompt, n_ctx_slot = 32768, n_keep = 0, task.n_tokens = 790
+slot update_slots: id  0 | task 0 | new prompt, n_ctx_slot = 16384, n_keep = 0, task.n_tokens = 790
 slot update_slots: id  0 | task 0 | n_tokens = 0, memory_seq_rm [0, end)
 slot update_slots: id  0 | task 0 | prompt processing progress, n_tokens = 726, batch.n_tokens = 726, progress = 0.918987
 slot update_slots: id  0 | task 0 | n_tokens = 726, memory_seq_rm [726, end)
 slot update_slots: id  0 | task 0 | prompt processing progress, n_tokens = 790, batch.n_tokens = 64, progress = 1.000000
 slot update_slots: id  0 | task 0 | prompt done, n_tokens = 790, batch.n_tokens = 64
-slot init_sampler: id  0 | task 0 | init sampler, took 0.14 ms, tokens: text = 790, total = 790
+slot init_sampler: id  0 | task 0 | init sampler, took 0.15 ms, tokens: text = 790, total = 790
 slot update_slots: id  0 | task 0 | created context checkpoint 1 of 8 (pos_min = 0, pos_max = 725, size = 17.024 MiB)
 slot print_timing: id  0 | task 0 | 
-prompt eval time =    1004.12 ms /   790 tokens (    1.27 ms per token,   786.76 tokens per second)
-       eval time =    3474.47 ms /   157 tokens (   22.13 ms per token,    45.19 tokens per second)
-      total time =    4478.58 ms /   947 tokens
-slot      release: id  0 | task 0 | stop processing: n_tokens = 946, truncated = 0
+prompt eval time =    1056.31 ms /   790 tokens (    1.34 ms per token,   747.88 tokens per second)
+       eval time =    2994.16 ms /   133 tokens (   22.51 ms per token,    44.42 tokens per second)
+      total time =    4050.47 ms /   923 tokens
+slot      release: id  0 | task 0 | stop processing: n_tokens = 922, truncated = 0
 srv  update_slots: all slots are idle
 srv  log_server_r: request: POST /v1/chat/completions 127.0.0.1 200

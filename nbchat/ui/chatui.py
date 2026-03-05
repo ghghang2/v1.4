@@ -14,9 +14,8 @@ from IPython.display import display
 from nbchat.ui import chat_renderer as renderer
 from nbchat.ui import tool_executor as executor
 from nbchat.ui import chat_builder
-from nbchat.compaction import CompactionEngine
 from nbchat.ui.utils import changed_files
-from nbchat.core import db, config, client
+from nbchat.core import db, config, client, compaction
 import nbchat.tools as tools
 
 _client = client.get_client()
@@ -32,7 +31,7 @@ class ChatUI:
         db.init_db()
         self.system_prompt = config.DEFAULT_SYSTEM_PROMPT
         self.model_name = config.MODEL_NAME
-        self.compaction_engine = CompactionEngine(
+        self.compaction_engine = compaction.CompactionEngine(
             threshold=config.CONTEXT_TOKEN_THRESHOLD,
             tail_messages=config.TAIL_MESSAGES,
             summary_prompt=config.SUMMARY_PROMPT,

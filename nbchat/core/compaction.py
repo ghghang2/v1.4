@@ -33,7 +33,7 @@ import threading
 from typing import List, Tuple, Optional
 
 from nbchat.ui.chat_builder import build_messages
-from nbchat.core.client import get_client
+from .client import get_client
 
 # Type alias for readability
 _Row = Tuple[str, str, str, str, str]
