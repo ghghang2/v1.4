@@ -45,33 +45,48 @@ Never ever use emojis.
 # --------------------------------------------------------------------------- #
 #  GitHub repository details
 # --------------------------------------------------------------------------- #
-# Load repository configuration from repo_config.yaml if present
-import os
+# ---------------------------------------------------------------------------
+#  Load repository configuration from ``repo_config.yaml``.
+# ---------------------------------------------------------------------------
+import logging
+from pathlib import Path
+
 try:
     import yaml
-except ImportError:
+except Exception as exc:  # pragma: no cover - yaml is required for config
+    logging.warning("PyYAML is not installed. Falling back to defaults.")
     yaml = None
 
-_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "repo_config.yaml")
-if os.path.exists(_config_path):
+_CONFIG_PATH = Path(__file__).resolve().parent.parent / "repo_config.yaml"
+
+def _load_config(path: Path) -> dict:
+    """Load the YAML configuration file.
+
+    Parameters
+    ----------
+    path: Path
+        Path to the YAML file.
+
+    Returns
+    -------
+    dict
+        Parsed configuration or an empty dict on failure.
+    """
+    if not path.exists():
+        return {}
     try:
-        with open(_config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) if yaml else {}
-        USER_NAME = cfg.get("user_name", "ghghang2")
-        REPO_NAME = cfg.get("repo_name", "v1.4")
-        CONTEXT_TOKEN_THRESHOLD = cfg.get("context_len", 16384)
-        TAIL_MESSAGES = cfg.get("tail_len", 4)
-    except Exception as e:
-        USER_NAME = "ghghang2"
-        REPO_NAME = "v1.4"
-        CONTEXT_TOKEN_THRESHOLD = 16384
-        TAIL_MESSAGES = 4
-        print(f"[WARNING] Failed to load repo_config.yaml: {e}")
-else:
-    USER_NAME = "ghghang2"
-    REPO_NAME = "v1.4"
-    CONTEXT_TOKEN_THRESHOLD = 16384
-    TAIL_MESSAGES = 4
+        with path.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.warning("Failed to load %s: %s", path, exc)
+        return {}
+
+_cfg = _load_config(_CONFIG_PATH)
+
+USER_NAME = _cfg.get("user_name", "ghghang2")
+REPO_NAME = _cfg.get("repo_name", "v1.4")
+CONTEXT_TOKEN_THRESHOLD = int(_cfg.get("context_len", 16384))
+TAIL_MESSAGES = int(_cfg.get("tail_len", 2))
 
 # --------------------------------------------------------------------------- #
 #  Items to ignore in the repo

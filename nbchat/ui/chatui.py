@@ -14,21 +14,21 @@ from IPython.display import display
 from nbchat.ui import chat_renderer as renderer
 from nbchat.ui import tool_executor as executor
 from nbchat.ui import chat_builder
+from nbchat.core import compaction
 from nbchat.ui.utils import changed_files
-from nbchat.core import db, config, client, compaction
-import nbchat.tools as tools
-
-_client = client.get_client()
-_tools = tools.get_tools()
+from nbchat.core.utils import lazy_import
 
 
 class ChatUI:
     """Chat interface with streaming, reasoning, and safe tool execution."""
 
-    MAX_TOOL_TURNS = 100
+    MAX_TOOL_TURNS = 50
 
     def __init__(self):
+        db = lazy_import("nbchat.core.db")
         db.init_db()
+
+        config = lazy_import("nbchat.core.config")
         self.system_prompt = config.DEFAULT_SYSTEM_PROMPT
         self.model_name = config.MODEL_NAME
         self.compaction_engine = compaction.CompactionEngine(
@@ -52,8 +52,9 @@ class ChatUI:
     # ------------------------------------------------------------------
     # Widget creation
     # ------------------------------------------------------------------
-
     def _create_widgets(self):
+        db = lazy_import("nbchat.core.db")
+
         self.metrics_output = widgets.HTML(
             value="<i>Loading server status...</i>",
             layout=widgets.Layout(width="100%", border="1px solid gray", padding="10px"),
@@ -63,87 +64,62 @@ class ChatUI:
         )
         self._refresh_tools_list()
 
-        new_chat_btn = widgets.Button(
-            description="+",
-            button_style="primary",
-            layout=widgets.Layout(width="100%"),
-        )
+        new_chat_btn = widgets.Button(description="+", button_style="primary",
+                                      layout=widgets.Layout(width="100%"))
         new_chat_btn.on_click(self._on_new_chat)
 
         options = list(db.get_session_ids())
         if self.session_id not in options:
             options.append(self.session_id)
-        self.session_dropdown = widgets.Dropdown(
-            options=options,
-            value=self.session_id,
-            layout=widgets.Layout(width="100%"),
-        )
+        self.session_dropdown = widgets.Dropdown(options=options, value=self.session_id,
+                                                  layout=widgets.Layout(width="100%"))
         self.session_dropdown.observe(self._on_session_change, names="value")
 
-        sidebar = widgets.VBox(
-            [
-                self.metrics_output,
-                widgets.HTML("<hr>"),
-                new_chat_btn,
-                widgets.HTML("<hr>"),
-                self.tools_output,
-                widgets.HTML("<hr>"),
-                self.session_dropdown,
-            ],
-            layout=widgets.Layout(width="15%", border="1px solid lightgray"),
-        )
+        sidebar = widgets.VBox([
+            self.metrics_output,
+            widgets.HTML("<hr>"),
+            new_chat_btn,
+            widgets.HTML("<hr>"),
+            self.tools_output,
+            widgets.HTML("<hr>"),
+            self.session_dropdown,
+        ], layout=widgets.Layout(width="15%", border="1px solid lightgray"))
 
-        self.chat_history = widgets.VBox(
-            [],
-            layout=widgets.Layout(
-                width="100%",
-                height="100%",
-                max_height="800px",
-                overflow_y="auto",
-                border="1px solid #ccc",
-            ),
-        )
+        self.chat_history = widgets.VBox([], layout=widgets.Layout(
+            width="100%", height="100%", max_height="800px", overflow_y="auto",
+            border="1px solid #ccc",
+        ))
         self.input_text = widgets.Textarea(
             placeholder="...",
             layout=widgets.Layout(width="90%", min_height="50px", height="auto"),
             rows=2,
         )
-        send_btn = widgets.Button(
-            description="Send",
-            button_style="success",
-            layout=widgets.Layout(width="5%", padding="0", margin="0"),
-        )
-        stop_btn = widgets.Button(
-            description="Stop",
-            button_style="warning",
-            layout=widgets.Layout(width="5%", padding="0", margin="0"),
-        )
+        send_btn = widgets.Button(description="Send", button_style="success",
+                                   layout=widgets.Layout(width="5%", padding="0", margin="0"))
+        stop_btn = widgets.Button(description="Stop", button_style="warning",
+                                   layout=widgets.Layout(width="5%", padding="0", margin="0"))
         send_btn.on_click(self._on_send)
         stop_btn.on_click(lambda *_: setattr(self, "_stop_streaming", True))
 
-        main = widgets.VBox(
-            [
-                widgets.HTML(""),
-                self.chat_history,
-                widgets.HBox([self.input_text, send_btn, stop_btn]),
-            ],
-            layout=widgets.Layout(width="100%", padding="0px"),
-        )
+        main = widgets.VBox([
+            widgets.HTML(""),
+            self.chat_history,
+            widgets.HBox([self.input_text, send_btn, stop_btn]),
+        ], layout=widgets.Layout(width="100%", padding="0px"))
 
         self.layout = widgets.HBox([sidebar, main])
 
     def _refresh_tools_list(self):
-        names = "<br>".join(t["function"]["name"] for t in _tools)
+        tools = lazy_import("nbchat.tools")
+        names = "<br>".join(t["function"]["name"] for t in tools)
         self.tools_output.value = f"<b>Tools</b><br>{names}"
 
     # ------------------------------------------------------------------
     # Metrics updater
     # ------------------------------------------------------------------
-
     def _start_metrics_updater(self):
         def update_loop():
             from nbchat.ui.styles import CODE_COLOR
-
             while True:
                 try:
                     log_path = Path("llama_server.log")
@@ -152,28 +128,21 @@ class ChatUI:
                             f.seek(0, 2)
                             f.seek(max(0, f.tell() - 4000))
                             lines = f.read().decode("utf-8", errors="ignore").splitlines()
-                        proc = any(
-                            "slot update_slots:" in l.lower() for l in lines[-10:]
-                        )
+                        proc = any("slot update_slots:" in l.lower() for l in lines[-10:])
                         if any("all slots are idle" in l.lower() for l in lines[-5:]):
                             proc = False
                         tps = 0.0
                         for line in reversed(lines):
                             if "eval time" in line.lower():
-                                m = re.search(
-                                    r"(?P<value>\d+(?:\.\d+)?)\s+tokens per second",
-                                    line,
-                                    re.IGNORECASE,
-                                )
+                                m = re.search(r"(?P<value>\d+(?:\.\d+)?)\s+tokens per second", line, re.IGNORECASE)
                                 if m:
                                     tps = float(m.group("value"))
                                     break
                         emoji = "🟢" if proc else "⚫"
                         content = (
                             f'<b>Server</b> {emoji}<br>'
-                            f'<b>TPS:</b> <code style="color:{CODE_COLOR};">'
-                            f"{tps}</code><br>"
-                            f"<i>{time.strftime('%H:%M:%S')}</i>"
+                            f'<b>TPS:</b> <code style="color:{CODE_COLOR};">{tps}</code><br>'
+                            f'<i>{time.strftime("%H:%M:%S")}</i>'
                         )
                         try:
                             cf = changed_files()
@@ -193,17 +162,21 @@ class ChatUI:
     # ------------------------------------------------------------------
     # History
     # ------------------------------------------------------------------
-
     def _load_history(self):
+        db = lazy_import("nbchat.core.db")
         self.history = db.load_history(self.session_id)
-        # Restore the rolling context summary so build_messages includes it.
-        self.compaction_engine.context_summary = db.load_context_summary(
-            self.session_id
-        )
+        # Restore the rolling summary so the engine has context after a reload.
+        self.compaction_engine.context_summary = db.load_context_summary(self.session_id)
         self._render_history()
 
     def _render_history(self):
         children = []
+        # If the engine holds a rolling summary (post-compaction), show it
+        # at the top of the chat so the user knows context was compacted.
+        if self.compaction_engine.context_summary:
+            children.append(
+                renderer.render_compacted_summary(self.compaction_engine.context_summary)
+            )
         for role, content, tool_id, tool_name, tool_args in self.history:
             if role == "user":
                 children.append(renderer.render_user(content))
@@ -214,13 +187,11 @@ class ChatUI:
             elif role == "assistant_full":
                 try:
                     msg = json.loads(tool_args)
-                    children.append(
-                        renderer.render_assistant_full(
-                            msg.get("reasoning_content", ""),
-                            msg.get("content", ""),
-                            msg.get("tool_calls", []),
-                        )
-                    )
+                    children.append(renderer.render_assistant_full(
+                        msg.get("reasoning_content", ""),
+                        msg.get("content", ""),
+                        msg.get("tool_calls", []),
+                    ))
                 except Exception:
                     children.append(renderer.render_assistant(content))
             elif role == "tool":
@@ -228,14 +199,11 @@ class ChatUI:
             elif role == "system":
                 children.append(renderer.render_system(content))
             elif role == "compacted":
-                # Legacy rows from sessions compacted before the context_summary
-                # approach — still render them so old sessions display correctly.
+                # Legacy rows from old DB sessions — still render them.
                 children.append(renderer.render_compacted_summary(content))
         self.chat_history.children = children
 
-    def _widget_for_assistant(
-        self, content: str, tool_id: str, tool_args: str
-    ) -> widgets.HTML:
+    def _widget_for_assistant(self, content: str, tool_id: str, tool_args: str) -> widgets.HTML:
         if tool_id == "multiple":
             try:
                 return renderer.render_assistant_with_tools(content, json.loads(tool_args))
@@ -249,64 +217,63 @@ class ChatUI:
     # ------------------------------------------------------------------
     # Compaction — synchronous, runs inside the stream thread
     # ------------------------------------------------------------------
+    def _build_messages(self) -> list:
+        """Build API messages, always threading in the rolling context summary."""
+        messages = chat_builder.build_messages(
+            self.history,
+            self.system_prompt,
+            context_summary=self.compaction_engine.context_summary,
+        )
+        for msg in messages:
+            msg.pop("reasoning_content", None)
+        return messages
 
     def _compact_now(self, messages: list) -> bool:
-        """Compact history if the token threshold is exceeded.
+        """Compact history if threshold exceeded.
 
-        Updates ``self.history``, ``self.compaction_engine.context_summary``,
-        the DB, and rebuilds *messages* in-place so the next API call sends
-        only the compacted context.
+        Runs synchronously in the stream thread. Updates ``self.history``,
+        the DB, and rebuilds ``messages`` in-place so the next API call
+        sends only the compacted context.
 
         Returns True if compaction was performed.
         """
         if not self.compaction_engine.should_compact(self.history):
             return False
 
+        db = lazy_import("nbchat.core.db")
+        import sys
+
         try:
             new_history = self.compaction_engine.compact_history(list(self.history))
         except Exception as e:
-            import sys
             print(f"[compaction] failed: {e}", file=sys.stderr)
             return False
 
         self.history = new_history
         db.replace_session_history(self.session_id, new_history)
+        # Persist the rolling summary so it survives kernel restarts.
+        summary = self.compaction_engine.context_summary
+        if summary:
+            db.save_context_summary(self.session_id, summary)
 
-        # Persist the updated rolling summary so it survives a page reload.
-        if self.compaction_engine.context_summary:
-            db.save_context_summary(
-                self.session_id, self.compaction_engine.context_summary
-            )
-
-        # Rebuild the messages list the caller will send to the API.
+        # Rebuild the messages list with the fresh summary injected.
         messages.clear()
-        messages.extend(
-            chat_builder.build_messages(
-                self.history,
-                self.system_prompt,
-                self.compaction_engine.context_summary,
-            )
-        )
-        for msg in messages:
-            msg.pop("reasoning_content", None)
+        messages.extend(self._build_messages())
 
-        # Show a cosmetic notice in the UI (does not affect history or DB).
-        self._append(
-            renderer.render_compacted_summary(
-                f"[Context compacted — {len(self.history)} rows retained]"
-            )
-        )
+        # Show compaction notice in the UI using the summary text directly.
+        if summary:
+            self._append(renderer.render_compacted_summary(summary))
 
         return True
 
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
-
     def _on_new_chat(self, _):
+        db = lazy_import("nbchat.core.db")
         self.session_id = str(uuid.uuid4())
         self.history = []
-        self.compaction_engine.context_summary = ""
+        self.compaction_engine.context_summary = ""  # fresh session, no prior summary
         options = list(db.get_session_ids())
         if self.session_id not in options:
             options.append(self.session_id)
@@ -323,6 +290,8 @@ class ChatUI:
         user_input = self.input_text.value.strip()
         if not user_input:
             return
+
+        db = lazy_import("nbchat.core.db")
 
         # Stop any running stream before starting a new one.
         if self._stream_thread and self._stream_thread.is_alive():
@@ -344,22 +313,19 @@ class ChatUI:
     # ------------------------------------------------------------------
     # Conversation loop
     # ------------------------------------------------------------------
-
     def _process_conversation_turn(self):
-        messages = chat_builder.build_messages(
-            self.history,
-            self.system_prompt,
-            self.compaction_engine.context_summary,
-        )
-        for msg in messages:
-            msg.pop("reasoning_content", None)
+        client = lazy_import("nbchat.core.client")
+        tools  = lazy_import("nbchat.tools")
+        db     = lazy_import("nbchat.core.db")
+
+        messages = self._build_messages()
 
         for turn in range(self.MAX_TOOL_TURNS + 1):
             if self._stop_streaming:
                 break
 
             reasoning, content, tool_calls, finish_reason = self._stream_response(
-                messages
+                client, tools, messages
             )
 
             if reasoning:
@@ -400,12 +366,11 @@ class ChatUI:
                 result = executor.run_tool(tool_name, tool_args)
 
                 self.history.append(("tool", result, tc["id"], tool_name, tool_args))
-                db.log_tool_msg(
-                    self.session_id, tc["id"], tool_name, tool_args, result
-                )
+                db.log_tool_msg(self.session_id, tc["id"], tool_name, tool_args, result)
                 messages.append(
                     {"role": "tool", "tool_call_id": tc["id"], "content": result}
                 )
+                # Always render the tool result immediately.
                 self._append(renderer.render_tool(result, tool_name, tool_args))
 
             # Compact after each full tool round-trip.
@@ -414,8 +379,7 @@ class ChatUI:
     # ------------------------------------------------------------------
     # Streaming
     # ------------------------------------------------------------------
-
-    def _stream_response(self, messages):
+    def _stream_response(self, client, tools, messages):
         reasoning_widget = None
         assistant_widget = None
         reasoning_accum = ""
@@ -423,12 +387,9 @@ class ChatUI:
         tool_buffer: dict = {}
         finish_reason = None
 
-        stream = _client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            stream=True,
-            tools=_tools,
-            max_tokens=4096,
+        stream = client.chat.completions.create(
+            model=self.model_name, messages=messages,
+            stream=True, tools=tools, max_tokens=4096,
         )
         for chunk in stream:
             if self._stop_streaming:
@@ -444,42 +405,30 @@ class ChatUI:
                     reasoning_widget = renderer.render_placeholder("reasoning")
                     self._append(reasoning_widget)
                 reasoning_accum += delta.reasoning_content
-                reasoning_widget.value = renderer.render_reasoning(
-                    reasoning_accum
-                ).value
+                reasoning_widget.value = renderer.render_reasoning(reasoning_accum).value
 
             if delta.content:
                 if assistant_widget is None:
                     assistant_widget = renderer.render_placeholder("assistant")
                     children = list(self.chat_history.children)
                     if reasoning_widget in children:
-                        children.insert(
-                            children.index(reasoning_widget) + 1, assistant_widget
-                        )
+                        children.insert(children.index(reasoning_widget) + 1, assistant_widget)
                     else:
                         children.append(assistant_widget)
                     self.chat_history.children = children
                 content_accum += delta.content
-                assistant_widget.value = renderer.render_assistant(
-                    content_accum
-                ).value
+                assistant_widget.value = renderer.render_assistant(content_accum).value
 
             if delta.tool_calls:
                 for tc in delta.tool_calls:
-                    entry = tool_buffer.setdefault(
-                        tc.index,
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.function.name, "arguments": ""},
-                        },
-                    )
+                    entry = tool_buffer.setdefault(tc.index, {
+                        "id": tc.id, "type": "function",
+                        "function": {"name": tc.function.name, "arguments": ""},
+                    })
                     if tc.function.arguments:
                         entry["function"]["arguments"] += tc.function.arguments
 
-        tool_calls = (
-            [tool_buffer[i] for i in sorted(tool_buffer)] if tool_buffer else None
-        )
+        tool_calls = [tool_buffer[i] for i in sorted(tool_buffer)] if tool_buffer else None
 
         if tool_calls:
             if assistant_widget is not None:
@@ -487,14 +436,10 @@ class ChatUI:
                     content_accum, tool_calls
                 ).value
             else:
-                assistant_widget = renderer.render_assistant_with_tools(
-                    "", tool_calls
-                )
+                assistant_widget = renderer.render_assistant_with_tools("", tool_calls)
                 children = list(self.chat_history.children)
                 if reasoning_widget in children:
-                    children.insert(
-                        children.index(reasoning_widget) + 1, assistant_widget
-                    )
+                    children.insert(children.index(reasoning_widget) + 1, assistant_widget)
                 else:
                     children.append(assistant_widget)
                 self.chat_history.children = children

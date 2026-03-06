@@ -1,15 +1,4 @@
-"""Utility for converting chat history into OpenAI API message format.
-
-This module isolates the logic that transforms the internal history
-representation into a list of dictionaries suitable for the OpenAI
-ChatCompletion API.
-
-The ``context_summary`` parameter allows the compaction engine to inject a
-rolling summary of older conversation turns into the system prompt without
-storing a special row in the history list.  This keeps the history
-append-only and avoids structural ordering constraints that previously caused
-``tool``-role errors on the inference server.
-"""
+"""Utility for converting chat history into OpenAI API message format."""
 from __future__ import annotations
 
 import json
@@ -30,27 +19,26 @@ def build_messages(
     system_prompt:
         The system message to prepend.
     context_summary:
-        Optional rolling summary of earlier conversation turns produced by
-        the compaction engine.  When provided it is appended to the system
-        prompt under a clearly labelled delimiter so the model knows it
-        represents *prior* context rather than instructions.
+        Rolling summary produced by CompactionEngine.  When non-empty it is
+        injected as a second system message immediately after the main system
+        prompt so the model always has the prior context even after rows have
+        been dropped from history.
     """
-    # Build the system prompt content, appending the summary when present.
-    system_content = system_prompt
-    if context_summary:
-        system_content = (
-            f"{system_prompt}"
-            "\n\n--- CONVERSATION HISTORY SUMMARY ---\n"
-            f"{context_summary}"
-            "\n--- END SUMMARY ---"
-        )
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
-    messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
+    # Inject the rolling compaction summary right after the system prompt.
+    if context_summary:
+        messages.append({
+            "role": "system",
+            "content": (
+                "Summary of the conversation so far (before the messages below):\n"
+                + context_summary
+            ),
+        })
 
     for role, content, tool_id, tool_name, tool_args in history:
         if role == "user":
             messages.append({"role": "user", "content": content})
-
         elif role == "assistant":
             if tool_id:
                 messages.append({
@@ -66,32 +54,23 @@ def build_messages(
                 })
             else:
                 messages.append({"role": "assistant", "content": content})
-
         elif role == "assistant_full":
             try:
                 full_msg = json.loads(tool_args)
                 messages.append(full_msg)
             except Exception:
                 messages.append({"role": "assistant", "content": content})
-
         elif role == "system":
             messages.append({"role": "system", "content": content})
-
         elif role == "tool":
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_id,
                 "content": content,
             })
-
         elif role == "compacted":
-            # Legacy rows from the old compaction scheme (stored in the DB
-            # before the context_summary approach was introduced).  Render
-            # them as system messages so old sessions still work correctly.
+            # Legacy rows from old sessions — surface as a system message.
             messages.append({"role": "system", "content": content})
-
-        # "analysis" rows are reasoning traces stored for UI display only;
-        # they are not sent to the model.
 
     return messages
 

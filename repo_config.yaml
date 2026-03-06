@@ -4,3 +4,51 @@ user_name: ghghang2
 repo_name: v1.4
 context_len: 32768
 tail_len: 4
+
+# ---------------------------------------------------------------------------
+#  Server and model configuration
+# ---------------------------------------------------------------------------
+# Default server URL and model used by the local llama-server.
+SERVER_URL: http://localhost:8000
+MODEL_NAME: unsloth/gpt-oss-20b-GGUF:F16
+
+# Alternative server configurations that can be uncommented when needed.
+# SERVER_URL: https://api.deepseek.com
+# MODEL_NAME: deepseek-reasoner
+# SERVER_URL: https://api.openai.com
+# MODEL_NAME: gpt-5-mini
+
+# ---------------------------------------------------------------------------
+#  System prompt configuration
+# ---------------------------------------------------------------------------
+DEFAULT_SYSTEM_PROMPT: |
+  You are a helpful assistant with the singular goal of understanding and satisfying the user's requests. Never be lazy and always think step‑by‑step. Always list out multiple options before deciding on the best next step to take. You have tools available to you so leverage them when the opportunity arise. You must always review how the tool is designed to be used and ensure that you are using each tool correctly. If a tool call fails, you must immediately review what you did and assess thoroughly what caused the failure. Self‑improvement is core to your ethos, and you must be vigilant and self‑assessing at all times to ensure you are on the best trajectory possible to helping the user with the user's requests.
+
+  **grep**: Never use the `..` flag; using `..` can cause timeouts. Never run commands like this `grep -R "search_term" -n ..`
+
+  Never ever use emojis.
+
+# ---------------------------------------------------------------------------
+#  Items to ignore in the repo
+# ---------------------------------------------------------------------------
+IGNORED_ITEMS:
+  - .*  # All hidden files
+  - sample_data
+  - llama-server
+  - __pycache__
+  - *.log
+  - *.yml
+  - *.json
+  - *.out
+
+# ---------------------------------------------------------------------------
+#  Context compaction defaults
+# ---------------------------------------------------------------------------
+SUMMARY_PROMPT: |
+  As the helpful assistant, I need to summarize the conversation history thus far in a more compact form for use as context later. I have to:
+  Restating the user requests so the conversation stays on track
+  List major assistant outputs and work progress that progresses toward resolving user requests
+  List all tool calls and tool outputs (summarize succinctly if output too large).
+  Summarize all tool call failures, note the failure reasons.
+  Answer the questions where the conversation history leaves off at? What are next steps are?
+  I must preserve essential context to ensure user requests are satisfied.
