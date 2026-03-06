@@ -26,7 +26,9 @@ import json
 from typing import Optional
 
 from nbchat.core.remote import RemoteClient
-from nbchat.core.config import REPO_NAME
+# Import the config module lazily so we can reload it on each invocation.
+import importlib
+import nbchat.core.config as cfg
 
 
 def push_to_github(
@@ -44,7 +46,9 @@ def push_to_github(
         the original behaviour.
     """
     try:
-        target_repo = REPO_NAME
+        # Reload the config module each call to pick up any changes in repo_config.yaml
+        importlib.reload(cfg)
+        target_repo = cfg.REPO_NAME
         client = RemoteClient(Path("."))
         # 1. Ensure the GitHub repo exists
         client.ensure_repo(target_repo)
