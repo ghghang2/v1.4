@@ -18,6 +18,10 @@ if not _log.handlers:
 _Row = Tuple[str, str, str, str, str]
 _DEPENDENT_ROLES = {"tool", "analysis", "assistant_full"}
 
+# Roles that can open a new exchange even within a single user turn.
+# Each assistant_full + its tool results form a discrete agentic step.
+_EXCHANGE_OPENERS = {"assistant", "assistant_full"}
+
 
 class CompactionEngine:
 
@@ -58,8 +62,6 @@ class CompactionEngine:
 
     def should_compact(self, history: List[_Row]) -> bool:
         history_tokens = self.total_tokens(history)
-        # Count the context_summary too — it is injected into the system prompt
-        # and consumes real context window space on every API call.
         summary_tokens = (
             self._estimate_tokens(self.context_summary)
             if self.context_summary else 0
@@ -74,21 +76,55 @@ class CompactionEngine:
         return tokens >= trigger
 
     # ------------------------------------------------------------------
-    # Turn grouping
+    # Grouping into compactable units
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _group_into_turns(history: List[_Row]) -> List[List[_Row]]:
-        turns: List[List[_Row]] = []
+    def _group_into_units(history: List[_Row]) -> List[List[_Row]]:
+        """Split history into the finest compactable units possible.
+
+        Primary split: at each ``user`` row (conversation turns).
+        Secondary split: within a turn, at each ``assistant`` or
+        ``assistant_full`` row — each agentic step (assistant + its tool
+        results) forms its own unit.  This handles the common case of a
+        long single-turn agentic loop where the user sends one message and
+        the assistant makes 30+ tool calls.
+
+        A unit is always structurally self-contained: it never begins with
+        a dependent role (tool / analysis) that requires a preceding row.
+        """
+        units: List[List[_Row]] = []
         current: List[_Row] = []
+
         for row in history:
-            if row[0] == "user" and current:
-                turns.append(current)
-                current = []
-            current.append(row)
+            role = row[0]
+
+            if role == "user":
+                # User row always starts a new unit.
+                if current:
+                    units.append(current)
+                current = [row]
+
+            elif role in _EXCHANGE_OPENERS and current:
+                # Start a new agentic-step unit, but only if the current unit
+                # already has content (avoid empty leading units).
+                # Exception: if the current unit's last row is also an opener
+                # with no tool results yet, keep accumulating.
+                last_role = current[-1][0]
+                if last_role not in _EXCHANGE_OPENERS:
+                    units.append(current)
+                    current = [row]
+                else:
+                    current.append(row)
+
+            else:
+                current.append(row)
+
         if current:
-            turns.append(current)
-        return turns
+            units.append(current)
+
+        _log.debug(f"_group_into_units: {len(history)} rows -> {len(units)} units")
+        return units
 
     # ------------------------------------------------------------------
     # Safe tail — never returns empty
@@ -96,13 +132,6 @@ class CompactionEngine:
 
     @staticmethod
     def _safe_tail(history: List[_Row], n: int) -> List[_Row]:
-        """Return last n rows starting at a structurally safe boundary.
-
-        Falls back progressively:
-        1. Walk forward past dependent roles from tail_start.
-        2. Walk backward to nearest user row.
-        3. Return full history rather than empty list.
-        """
         if not history or n <= 0:
             return history
 
@@ -130,7 +159,6 @@ class CompactionEngine:
 
     @staticmethod
     def _truncate_tool_results(rows: List[_Row], budget: int) -> List[_Row]:
-        """Truncate oversized tool results largest-first until rows fit budget."""
         def est(text: str) -> int:
             return max(1, len(text) // 3)
 
@@ -168,19 +196,6 @@ class CompactionEngine:
         return result
 
     # ------------------------------------------------------------------
-    # Intra-turn safe split
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _find_safe_split(group: List[_Row]) -> Optional[int]:
-        for i in range(1, len(group)):
-            role = group[i][0]
-            prev_role = group[i - 1][0]
-            if role not in _DEPENDENT_ROLES and prev_role != "assistant_full":
-                return i
-        return None
-
-    # ------------------------------------------------------------------
     # Core compaction
     # ------------------------------------------------------------------
 
@@ -194,96 +209,54 @@ class CompactionEngine:
             _log.debug("history too short to compact")
             return history
 
-        turns = self._group_into_turns(history)
+        units = self._group_into_units(history)
 
-        # Reserve space for context_summary (existing + new one being produced).
-        # Target: tail rows use at most 50% of threshold so summary fits too.
-        summary_tokens = (
-            self._estimate_tokens(self.context_summary)
-            if self.context_summary else 0
-        )
-        tail_budget = max(
-            int(self.threshold * 0.40),
-            int(self.threshold * 0.75) - summary_tokens,
-        )
-        _log.debug(
-            f"tail_budget={tail_budget} tokens "
-            f"(summary_tokens={summary_tokens}, threshold={self.threshold})"
-        )
+        if len(units) <= 1:
+            # Only one unit and it's already over budget — truncate its tool
+            # results so it fits, there's nothing older to summarise.
+            _log.debug(
+                "only one unit — truncating tool results to fit budget"
+            )
+            tail_budget = int(self.threshold * 0.50)
+            truncated = self._truncate_tool_results(history, tail_budget)
+            # Still produce a summary stub so context_summary is non-empty
+            # and the model knows something was trimmed.
+            self.context_summary = (
+                (self.context_summary + "\n" if self.context_summary else "") +
+                "[Earlier tool outputs were truncated to fit the context window.]"
+            )
+            with self._cache_lock:
+                self._cache.clear()
+            return truncated
 
-        to_summarise: List[_Row] = []
-        remaining_turns: List[List[_Row]] = list(turns)
-
-        while remaining_turns:
-            remaining_flat = [row for t in remaining_turns for row in t]
-            if self.total_tokens(remaining_flat) <= tail_budget:
+        # Keep the last N units as the tail (N chosen so row count >= tail_messages).
+        tail_units: List[List[_Row]] = []
+        tail_row_count = 0
+        for unit in reversed(units):
+            tail_units.insert(0, unit)
+            tail_row_count += len(unit)
+            if tail_row_count >= self.tail_messages:
                 break
 
-            candidate_turn = remaining_turns[0]
-            after_drop = [row for t in remaining_turns[1:] for row in t]
+        older_units = units[:len(units) - len(tail_units)]
 
-            if not after_drop:
-                # Last remaining turn.
-                split_idx = self._find_safe_split(candidate_turn)
-                if split_idx is not None:
-                    to_summarise.extend(candidate_turn[:split_idx])
-                    remaining_turns[0] = candidate_turn[split_idx:]
-                    _log.debug(
-                        f"intra-turn split at index {split_idx} "
-                        f"within last turn of {len(candidate_turn)} rows"
-                    )
-                else:
-                    _log.debug(
-                        "cannot split last remaining turn — "
-                        "truncating oversized tool results in place"
-                    )
-                    truncated = self._truncate_tool_results(candidate_turn, tail_budget)
-                    self.context_summary = self._call_summariser(
-                        to_summarise if to_summarise else history
-                    )
-                    with self._cache_lock:
-                        self._cache.clear()
-                    return truncated
-                break
-
-            turn_tokens = self.total_tokens(candidate_turn)
-            if turn_tokens >= tail_budget:
-                split_idx = self._find_safe_split(candidate_turn)
-                if split_idx is not None:
-                    to_summarise.extend(candidate_turn[:split_idx])
-                    remaining_turns[0] = candidate_turn[split_idx:]
-                    _log.debug(
-                        f"oversized turn ({turn_tokens} tokens): "
-                        f"intra-turn split at index {split_idx}"
-                    )
-                    continue
-                _log.debug(
-                    f"oversized turn with no safe split "
-                    f"({turn_tokens} tokens) — truncating tool results"
-                )
-                remaining_turns[0] = self._truncate_tool_results(
-                    candidate_turn, tail_budget
-                )
-                to_summarise.extend(remaining_turns.pop(0))
-                continue
-
-            to_summarise.extend(remaining_turns.pop(0))
-
-        if not to_summarise:
-            _log.debug("nothing to summarise")
+        if not older_units:
+            _log.debug("no older units to summarise — keeping full history")
             return history
 
-        remaining_history = [row for t in remaining_turns for row in t]
+        to_summarise = [row for u in older_units for row in u]
+        remaining_history = [row for u in tail_units for row in u]
 
-        if not remaining_history:
-            _log.debug(
-                "remaining_history empty after loop — falling back to safe tail"
-            )
-            remaining_history = self._safe_tail(history, self.tail_messages)
+        # Truncate oversized tool results in the tail so retained rows
+        # don't themselves blow the budget.
+        tail_budget = int(self.threshold * 0.50)
+        remaining_history = self._truncate_tool_results(remaining_history, tail_budget)
 
         _log.debug(
-            f"summarising {len(to_summarise)} rows, "
-            f"keeping {len(remaining_history)} rows"
+            f"summarising {len(to_summarise)} rows "
+            f"({len(older_units)} units), "
+            f"keeping {len(remaining_history)} rows "
+            f"({len(tail_units)} units)"
         )
 
         self.context_summary = self._call_summariser(to_summarise)
@@ -320,17 +293,7 @@ class CompactionEngine:
 
         messages.append({
             "role": "user",
-            "content": (
-                "The conversation above needs to be summarised because we are "
-                "running out of context window. Please write a concise summary "
-                "covering:\n"
-                "1. Key decisions and conclusions reached\n"
-                "2. Important file paths, code changes, and edits made\n"
-                "3. Tool calls and their outcomes (condense large outputs to "
-                "key findings)\n"
-                "4. Current task status and next steps\n\n"
-                "Write only the summary, no preamble."
-            ),
+            "content": this.summary_prompt,
         })
 
         _log.debug(f"sending {len(messages)} messages to summariser")
