@@ -91,7 +91,7 @@ class ContextMixin:
                 i += 1
 
         # Drop oldest exchanges, always keeping KEEP_RECENT_EXCHANGES.
-        KEEP_RECENT_EXCHANGES = 4
+        KEEP_RECENT_EXCHANGES = 6
         droppable = exchanges[:-KEEP_RECENT_EXCHANGES] if len(exchanges) > KEEP_RECENT_EXCHANGES else []
 
         offset = 0  # track index shift as we delete
@@ -104,6 +104,17 @@ class ContextMixin:
                 f"_hard_trim: dropping exchange [{s}:{e}] "
                 f"({e-s} messages), total now {total()}"
             )
+            # Before dropping, append a one-liner to the system message
+            # so the model retains awareness of what was found.
+            dropped_summaries = [
+                messages[s + i].get("content", "")[:120]
+                for i in range(1, e - s)
+                if messages[s + i].get("role") == "tool"
+            ]
+            if dropped_summaries and messages and messages[0].get("role") == "system":
+                note = " | ".join(dropped_summaries)
+                messages[0]["content"] += f"\n[earlier result: {note}]"
+
             del messages[s:e]
             offset += (end - start)
 

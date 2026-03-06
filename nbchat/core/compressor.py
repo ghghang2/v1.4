@@ -18,14 +18,14 @@ if not _log.handlers:
 
 # Tool outputs shorter than this pass through verbatim — no LLM call.
 # Set high enough that most file reads are preserved intact.
-COMPRESS_THRESHOLD_CHARS = 4000
+COMPRESS_THRESHOLD_CHARS = 8000
 
 # These tools always produce content worth keeping verbatim.
 # Never run relevance filtering on them — just truncate if huge.
 ALWAYS_KEEP_TOOLS = {
-    "read_file", "cat", "sed", "grep", "find", "ls", "tree", "glob",
+    "read_file", "cat", "grep", "find", "ls", "tree", "glob",
     "list_files", "list_directory", "view_file", "get_file",
-    "bash", "run_command", "execute",  # command output is always relevant
+    "bash", "run_command", "execute", "sed", "awk", "head", "tail",
 }
 
 
