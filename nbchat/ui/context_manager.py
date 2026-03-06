@@ -76,8 +76,8 @@ class ContextMixin:
         limit = int(config.CONTEXT_TOKEN_THRESHOLD * 0.85)
         # Hard cap: never keep more than this many exchanges regardless
         # of token budget — prevents the 26-drop cascade on turn rebuild.
-        MAX_EXCHANGES = 8
-        KEEP_RECENT_EXCHANGES = 4
+        MAX_EXCHANGES = 16
+        KEEP_RECENT_EXCHANGES = 8
 
         def est(msg: dict) -> int:
             content = msg.get("content") or ""

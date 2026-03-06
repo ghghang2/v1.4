@@ -36,7 +36,7 @@ class ConversationMixin:
         except Exception as exc:
             _log.debug(f"_process_conversation_turn crashed: {type(exc).__name__}: {exc}", exc_info=True)
             self._append(renderer.render_assistant(
-                f"⚠️ Conversation loop stopped unexpectedly: {type(exc).__name__}: {exc}"
+                f"Conversation loop stopped unexpectedly: {type(exc).__name__}: {exc}"
             ))
 
     def _run_conversation_loop(self, real_client, db, renderer, executor, chat_builder, comp) -> None:

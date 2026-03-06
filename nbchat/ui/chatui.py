@@ -31,8 +31,7 @@ class ChatUI(ContextMixin, ConversationMixin):
 
     MAX_TOOL_TURNS = 100
     # Number of user turns to include in the model's context window.
-    # Tool outputs are compressed so 2 turns stays well within budget.
-    WINDOW_TURNS = 4
+    WINDOW_TURNS = 8
 
     def __init__(self):
         db = lazy_import("nbchat.core.db")
